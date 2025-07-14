@@ -17,7 +17,7 @@ from torch import cuda
 from gpu_monitor import print_vram   # optional
 
 # ---------- CONFIG ----------
-HF_MODEL_NAME   = "moonshotai/Moonlight-16B-A3B"
+HF_MODEL_NAME   = "Qwen/Qwen2.5-7B-Instruct"
 EMBED_MODEL     = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE   = Path("docs/services.xlsx")
 CHUNK_SIZE      = 1_000
@@ -38,17 +38,29 @@ class MedicalAssistant:
         self.db = self._load_or_build_index()
 
     # ---------- LLM ----------
+    from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
+
     def _load_llm(self):
-        print("⌛ Loading Qwen 7B …")
+        print("⌛ Loading Qwen 7B with YaRN (RoPE scaling)...")
         tok = AutoTokenizer.from_pretrained(HF_MODEL_NAME, trust_remote_code=True)
+
+        # === YaRN RoPE scaling ===
+        rope_kwargs = {
+            "rope_scaling": {
+                "type": "yarn",  # YaRN
+                "factor": 4.0,  # 4x длина контекста (32k → ~128k)
+                "original_max_position_embeddings": 32768
+            }
+        }
+
         mdl = AutoModelForCausalLM.from_pretrained(
             HF_MODEL_NAME,
             torch_dtype=torch.float16,
             device_map="auto",
             trust_remote_code=True,
+            **rope_kwargs
         )
-        print("✅ Model ready")
-        print_vram("After model")
+        print("✅ YaRN-enabled model ready")
         return tok, mdl
 
     # ---------- EMBEDDER ----------

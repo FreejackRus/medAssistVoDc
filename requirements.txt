@@ -1,0 +1,21 @@
+# --- Core ML stack ---
+torch>=2.1.0
+transformers>=4.40.0
+accelerate>=0.26.0         # для device_map="auto"
+sentence-transformers>=2.7.0
+
+# --- LangChain & friends ---
+langchain>=0.1.0
+langchain-community>=0.0.20
+pypdf>=3.17.0              # PyPDFLoader
+
+# --- Vector DB ---
+faiss-gpu>=1.8.0           # замените на faiss-gpu при наличии CUDA
+
+# --- Data wrangling ---
+pandas>=2.1.0
+openpyxl>=3.1.0            # чтение .xlsx (SERVICES_FILE)
+
+# --- Optional, но часто полезно ---
+numpy>=1.24.0
+tqdm>=4.65.0               # если вывод прогресса
