@@ -17,13 +17,13 @@ from torch import cuda
 from gpu_monitor import print_vram   # optional
 
 # ---------- CONFIG ----------
-HF_MODEL_NAME   = "Qwen/Qwen2.5-7B-Instruct"
+HF_MODEL_NAME   = "moonshotai/Kimi-K2-Instruct"
 EMBED_MODEL     = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE   = Path("docs/services.xlsx")
 CHUNK_SIZE      = 1_000
 CHUNK_OVERLAP   = 200
-MAX_NEW_TOKENS  = 20_048
-MAX_INPUT_TOK   = 66_000
+MAX_NEW_TOKENS  = 10_048
+MAX_INPUT_TOK   = 128_000
 TOP_K           = 50
 # ---------------------------
 
@@ -149,7 +149,7 @@ class MedicalAssistant:
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
         messages = [{"role": "user", "content": prompt + content}]
-        chat = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        chat = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
         inputs = self.tokenizer(chat, return_tensors="pt").to(self.model.device)
 
         streamer = TextStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)

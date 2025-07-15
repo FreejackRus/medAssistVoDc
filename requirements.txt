@@ -1,21 +1,25 @@
-# --- Core ML stack ---
+# --- Core ML stack (CUDA 12.x) ---
 torch>=2.1.0
 transformers>=4.40.0
-accelerate>=0.26.0         # для device_map="auto"
+accelerate>=0.26.0
 sentence-transformers>=2.7.0
 
-# --- LangChain & friends ---
-langchain>=0.1.0
-langchain-community>=0.0.20
-pypdf>=3.17.0              # PyPDFLoader
+# --- LangChain 0.2-compatible ---
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface          # новый пакет для HuggingFaceEmbeddings
+pypdf>=3.17.0
 
-# --- Vector DB ---
-faiss-gpu>=1.8.0           # замените на faiss-gpu при наличии CUDA
+# --- FAISS for CUDA 12 ---
+faiss-gpu-cu12            # wheel-файл собран под CUDA 12
 
-# --- Data wrangling ---
+# --- Data ---
 pandas>=2.1.0
-openpyxl>=3.1.0            # чтение .xlsx (SERVICES_FILE)
+openpyxl>=3.1.0
 
-# --- Optional, но часто полезно ---
+# --- Helpers ---
 numpy>=1.24.0
-tqdm>=4.65.0               # если вывод прогресса
+tqdm>=4.65.0
+blobfile
+tiktoken
+protobuf
