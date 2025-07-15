@@ -10,8 +10,6 @@ langchain-community>=0.2.0
 langchain-huggingface          # новый пакет для HuggingFaceEmbeddings
 pypdf>=3.17.0
 
-# --- FAISS for CUDA 12 ---
-faiss-gpu-cu12            # wheel-файл собран под CUDA 12
 
 # --- Data ---
 pandas>=2.1.0
