@@ -1,4 +1,4 @@
-# medical_hf.py  —  runs DeepSeek-R1-0528-Qwen3-8B-GGUF directly via llama-cpp-python
+# medical_ollama.py  —  работает только с Ollama (REST API)
 from __future__ import annotations
 
 import os
@@ -13,28 +13,21 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-from llama_cpp import Llama   # <— new
+import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-MODEL_PATH: str = "hf.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:BF16"   # adjust if needed
+OLLAMA_MODEL: str = "hf.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:BF16"          # сначала «ollama pull <name>»
 EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 TOP_K: int = 50
 MAX_INPUT_TOK: int = 128_000
-N_CTX: int = 64_000   # context length
 # ----------------------------------------------------------
 
 
 class MedicalAssistant:
     def __init__(self) -> None:
-        self.llm: Llama = Llama(
-            model_path=MODEL_PATH,
-            n_ctx=N_CTX,           # max context
-            n_gpu_layers=-1,       # offload all layers to GPU (if CUDA available)
-            verbose=False,
-        )
         self.embeddings = self._lazy_embedder()
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
@@ -46,7 +39,7 @@ class MedicalAssistant:
     def _lazy_embedder(self):
         return HuggingFaceEmbeddings(
             model_name=EMBED_MODEL,
-            model_kwargs={"device": "cpu"},
+            model_kwargs={"device": "cpu"},  # можно "cuda", если есть
             encode_kwargs={"normalize_embeddings": True},
             cache_folder=".embed_cache",
         )
@@ -145,11 +138,7 @@ class MedicalAssistant:
             f"- ID {d.metadata['id']}: {d.metadata['name']}" for d in services
         )
 
-        system_msg = (
-            "该助手为DeepSeek-R1，由深度求索公司创造。\n今天是2025年7月16日，星期三。"
-        )
-        prompt = f"""{system_msg}
-
+        prompt = f"""
 Вы — квалифицированный медицинский ассистент. На основании диагноза и клинического контекста сформируйте максимально подробный алгоритм диагностики и лечения, включая конкретные медицинские услуги с их ID. Ответ должен быть структурирован, научно обоснован и ориентирован на международные стандарты оказания помощи.
 
         Диагноз: {self.diagnosis_name}
@@ -211,23 +200,32 @@ class MedicalAssistant:
         )
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
-        full_prompt = f"<｜User｜>{prompt}\n{content}<｜Assistant｜>"
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "该助手为DeepSeek-R1，由深度求索公司创造。\n"
+                    "今天是2025年7月16日，星期三。\n"
+                    "Ты — русскоязычный медицинский ассистент."
+                ),
+            },
+            {"role": "user", "content": prompt + content},
+        ]
 
         try:
-            stream = self.llm(
-                full_prompt,
-                max_tokens=8_192,
-                temperature=0.6,
-                top_p=0.95,
-                stop=["<｜end▁of▁sentence｜>"],
+            stream = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=messages,
                 stream=True,
+                options={"temperature": 0.6, "top_p": 0.95}
+
             )
-            for piece in stream:
-                token = piece["choices"][0]["delta"].get("content", "")
+            for chunk in stream:
+                token = chunk["message"]["content"]
                 file.write(token)
                 print(token, end="", flush=True)
         except Exception as e:
-            print("\n❌ Ошибка при вызове модели:", e)
+            print("\n❌ Ошибка при вызове Ollama:", e)
 
     # ---------- RUN ----------
     def run(self):
