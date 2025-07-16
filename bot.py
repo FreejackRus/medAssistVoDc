@@ -79,6 +79,7 @@ class MedicalAssistant:
         if not os.path.exists(pdf_path):
             print("❌ PDF not found")
             return {}
+
         pages = PyPDFLoader(pdf_path).load_and_split()
         full_text = "\n".join(p.page_content for p in pages)
 
@@ -92,25 +93,8 @@ class MedicalAssistant:
         )
         print(f"✅ Diagnosis: {self.diagnosis_name}")
 
-        def grab(txt, start, end):
-            s = re.search(start, txt, re.I)
-            if not s:
-                return ""
-            e = re.search(end, txt[s.end() :], re.I)
-            return txt[
-                s.start() : s.end() + (e.start() if e else len(txt))
-            ].strip()
-
-        return {
-            "diagnosis": grab(full_text, "диагноз", "лечение|обследование"),
-            "treatment": grab(full_text, "лечение", "мониторинг|реабилитация"),
-            "monitoring": grab(
-                full_text, "мониторинг|наблюдение", "осложнения"
-            ),
-            "complications": grab(
-                full_text, "осложнения", "заключение|приложения"
-            ),
-        }
+        # просто возвращаем весь текст в одной «секции»
+        return {"guidelines": full_text}
 
     # ---------- UTIL ----------
     @staticmethod
@@ -195,9 +179,7 @@ class MedicalAssistant:
 
         Сформируй подробный алгоритм диагностики и лечения с указанием ID услуг
         """
-        content = "\n\n".join(
-            f"--- {k.upper()} ---\n{v}" for k, v in sections.items() if v
-        )
+        content = sections.get("guidelines", "")
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
         messages = [
