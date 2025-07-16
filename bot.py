@@ -146,6 +146,7 @@ class MedicalAssistant:
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
         system_prompt = (
+            "--think=false \n"
             "你是一位专业的俄语医疗助手，由深度求索公司创造。\n"
             "今天是2025年7月16日，星期三。\n"
             "Ты русскоязычный медицинский ассистент."
