@@ -16,7 +16,7 @@ from langchain_community.vectorstores import FAISS
 import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-OLLAMA_MODEL: str = "hf.co/Qwen/Qwen3-32B-GGUF:Q5_K_M"          # сначала «ollama pull <name>»
+OLLAMA_MODEL: str = "hf.co/Qwen/Qwen3-32B-GGUF:Q4_K_M"          # сначала «ollama pull <name>»
 EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
@@ -154,7 +154,8 @@ class MedicalAssistant:
 
         user_prompt = f"""
         Ниже приведены клинические рекомендации по заболеванию «{self.diagnosis_name}».  
-        На их основе напиши максимально подробный, структурированный алгоритм диагностики и лечения, ориентированный на международные стандарты.
+        На их основе напиши максимально подробный, структурированный алгоритм диагностики и лечения, ориентированный на Клинические рекомендации, представленные далее.
+        Учти все ньюансы, исключения и важные уточнения, относительно диагосики и лечения.
 
         Формат ответа:
         ### Подробный Алгоритм Диагностики и Лечения {self.diagnosis_name}
