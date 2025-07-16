@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, TextIO
-
+import fitz
 import pandas as pd
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -23,6 +23,10 @@ CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 TOP_K: int = 50
 MAX_INPUT_TOK: int = 128_000
+SECTION_PATTERN = re.compile(
+    r"^(\d+(?:\.\d+)*)\s+([^\n]+)",  # 1.1, 2.3.4, … + title
+    re.MULTILINE,
+)
 # ----------------------------------------------------------
 
 
@@ -76,13 +80,20 @@ class MedicalAssistant:
 
     # ---------- PDF ----------
     def load_guidelines(self, pdf_path: str) -> Dict[str, str]:
+        """
+        Reads a Russian clinical guideline PDF and returns a dict:
+            {"1.1 Определение": "...", "1.2 Этиология": "...", ...}
+        Keeps Cyrillic headings intact.
+        """
         if not os.path.exists(pdf_path):
             print("❌ PDF not found")
             return {}
 
-        pages = PyPDFLoader(pdf_path).load_and_split()
-        full_text = "\n".join(p.page_content for p in pages)
+        doc = fitz.open(pdf_path)
+        full_text = "\n".join(page.get_text("text") for page in doc)
+        doc.close()
 
+        # Grab diagnosis name from the first page
         title = re.search(
             r"(Сахарный диабет.*?|Гипертония.*?|Астма.*?)\n",
             full_text[:2000],
@@ -93,8 +104,16 @@ class MedicalAssistant:
         )
         print(f"✅ Diagnosis: {self.diagnosis_name}")
 
-        # просто возвращаем весь текст в одной «секции»
-        return {"guidelines": full_text}
+        # Split by headings
+        sections = {}
+        splits = SECTION_PATTERN.split(full_text)
+        # split returns [prefix, num1, title1, body1, num2, title2, body2, ...]
+        for i in range(1, len(splits), 3):
+            number, title, body = splits[i], splits[i + 1], splits[i + 2]
+            key = f"{number} {title}".strip()
+            sections[key] = body.strip()
+
+        return sections
 
     # ---------- UTIL ----------
     @staticmethod
