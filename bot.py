@@ -195,6 +195,7 @@ class MedicalAssistant:
                 model=OLLAMA_MODEL,
                 messages=messages,
                 stream=True,
+                think=False,
                 options={"temperature": 0.6, "top_p": 0.95}
 
             )
