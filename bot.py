@@ -16,7 +16,7 @@ from langchain_community.vectorstores import FAISS
 import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-OLLAMA_MODEL: str = "hf.co/Qwen/Qwen3-14B-GGUF:Q8_0"          # сначала «ollama pull <name>»
+OLLAMA_MODEL: str = "hf.co/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF:Q6_K"          # сначала «ollama pull <name>»
 EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
@@ -147,8 +147,6 @@ class MedicalAssistant:
 
         system_prompt = (
             "--think=false \n"
-            "你是一位专业的俄语医疗助手，由深度求索公司创造。\n"
-            "今天是2025年7月16日，星期三。\n"
             "Ты русскоязычный медицинский ассистент."
         )
 
