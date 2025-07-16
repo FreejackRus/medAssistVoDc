@@ -245,6 +245,11 @@ class MedicalAssistant:
             if not sections:
                 continue
 
+            outfile = Path("testSec.txt")
+            with outfile.open("w", encoding="utf-8") as f:
+                for key, text in sections.items():
+                    f.write(f"--- {key.upper()} ---\n{text}\n\n")
+            print("✅ Raw sections saved →", outfile.absolute())
             safe = re.sub(r"[^\w\s-]", "", self.diagnosis_name).strip().replace(" ", "_")[:50]
             outfile = Path(f"test.txt")
             with outfile.open("w", encoding="utf-8") as f:
