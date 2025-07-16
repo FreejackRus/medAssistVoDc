@@ -1,83 +1,45 @@
-# medical_qwen.py  (YaRN-free, LangChain 0.2+)
+# medical_ollama.py  —  работает только с Ollama (REST API)
 from __future__ import annotations
 
 import os
 import re
-import threading
-import gc
 from pathlib import Path
-from typing import Dict, List, TextIO, Tuple
+from typing import Dict, List, TextIO
 
 import pandas as pd
-import torch
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    TextStreamer,
-    AutoConfig,
-)
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from torch import cuda
-from gpu_monitor import print_vram  # optional
+
+import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-HF_MODEL_NAME = "moonshotai/Kimi-K2-Instruct "
-EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-SERVICES_FILE = Path("docs/services.xlsx")
-CHUNK_SIZE = 1_000
-CHUNK_OVERLAP = 200
-MAX_NEW_TOKENS = 10_048  # safe for 24 GB
-MAX_INPUT_TOK = 128_000  # safe for 24 GB
-TOP_K = 50
+OLLAMA_MODEL: str = "kimi-k2-instruct"          # сначала «ollama pull <name>»
+EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+SERVICES_FILE: Path = Path("docs/services.xlsx")
+CHUNK_SIZE: int = 1_000
+CHUNK_OVERLAP: int = 200
+TOP_K: int = 50
+MAX_INPUT_TOK: int = 128_000
 # ----------------------------------------------------------
 
 
 class MedicalAssistant:
-    def __init__(self):
-        self._stop_monitor = threading.Event()
-        self.device = "cuda" if cuda.is_available() else "cpu"
+    def __init__(self) -> None:
         self.embeddings = self._lazy_embedder()
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
             chunk_overlap=CHUNK_OVERLAP,
         )
-        self.tokenizer, self.model = self._load_llm()
         self.db = self._load_or_build_index()
-
-    # ---------- LLM ----------
-    def _load_llm(self):
-        print("⌛ Loading Instruct (bf16, no YaRN)...")
-        tok = AutoTokenizer.from_pretrained(
-            HF_MODEL_NAME,
-            trust_remote_code=True,
-        )
-        cfg = AutoConfig.from_pretrained(
-            HF_MODEL_NAME,
-            trust_remote_code=True,
-        )
-        # raise context limit if you really need it (optional)
-        cfg.max_position_embeddings = 128000  # native 32 k
-
-        mdl = AutoModelForCausalLM.from_pretrained(
-            HF_MODEL_NAME,
-            config=cfg,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-        print("✅ Model ready.")
-        print_vram("After model")
-        return tok, mdl
 
     # ---------- EMBEDDER ----------
     def _lazy_embedder(self):
         return HuggingFaceEmbeddings(
             model_name=EMBED_MODEL,
-            model_kwargs={"device": self.device},
+            model_kwargs={"device": "cpu"},  # можно "cuda", если есть
             encode_kwargs={"normalize_embeddings": True},
             cache_folder=".embed_cache",
         )
@@ -152,7 +114,7 @@ class MedicalAssistant:
 
     # ---------- UTIL ----------
     @staticmethod
-    def _trim_tokens(text, max_tok) -> str:
+    def _trim_tokens(text: str, max_tok: int) -> str:
         max_chars = int(max_tok * 4.5)
         return (
             text[:max_chars].rsplit("\n", 1)[0]
@@ -160,7 +122,7 @@ class MedicalAssistant:
             else text
         )
 
-    def find_services(self, query, k=TOP_K) -> List[Document]:
+    def find_services(self, query: str, k: int = TOP_K) -> List[Document]:
         hits = self.db.similarity_search(query[:300], k=k, fetch_k=k * 3)
         seen, unique = set(), []
         for doc in hits:
@@ -170,14 +132,14 @@ class MedicalAssistant:
         return unique
 
     # ---------- GENERATE ----------
-    def _generate_streaming(self, sections: Dict[str, str], file: TextIO):
+    def _generate_streaming(self, sections: Dict[str, str], file: TextIO) -> None:
         services = self.find_services(self.diagnosis_name)
         services_list = "\n".join(
             f"- ID {d.metadata['id']}: {d.metadata['name']}" for d in services
         )
 
         prompt = f"""
-        Вы — квалифицированный медицинский ассистент. На основании диагноза и клинического контекста сформируйте максимально подробный алгоритм диагностики и лечения, включая конкретные медицинские услуги с их ID. Ответ должен быть структурирован, научно обоснован и ориентирован на международные стандарты оказания помощи.
+Вы — квалифицированный медицинский ассистент. На основании диагноза и клинического контекста сформируйте максимально подробный алгоритм диагностики и лечения, включая конкретные медицинские услуги с их ID. Ответ должен быть структурирован, научно обоснован и ориентирован на международные стандарты оказания помощи.
 
         Диагноз: {self.diagnosis_name}
         Доступные услуги (ID): {services}
@@ -239,66 +201,51 @@ class MedicalAssistant:
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
         messages = [{"role": "user", "content": prompt + content}]
-        chat = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-        inputs = self.tokenizer(chat, return_tensors="pt").to(self.model.device)
 
-        streamer = TextStreamer(
-            self.tokenizer, skip_prompt=True, skip_special_tokens=True
-        )
-        with torch.no_grad():
-            generated = self.model.generate(
-                **inputs,
-                max_new_tokens=MAX_NEW_TOKENS,
-                temperature=0.3,
-                do_sample=True,
-                streamer=streamer,
-                pad_token_id=self.tokenizer.eos_token_id,
+        try:
+            stream = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=messages,
+                stream=True,
             )
-
-        answer = self.tokenizer.decode(
-            generated[0][inputs.input_ids.shape[1] :],
-            skip_special_tokens=True,
-        )
-        file.write(answer)
+            for chunk in stream:
+                token = chunk["message"]["content"]
+                file.write(token)
+                print(token, end="", flush=True)
+        except Exception as e:
+            print("\n❌ Ошибка при вызове Ollama:", e)
 
     # ---------- RUN ----------
     def run(self):
-        if not (self.tokenizer and self.model and self.db):
-            print("❌ Not initialized")
+        if not self.db:
+            print("❌ Index not loaded")
             return
         print("🤖 Ready. Type PDF path or 'exit'")
         while True:
             pdf = input("📄 PDF: ").strip()
-            if pdf.lower() in {"exit", "quit"}:
+            if pdf.lower() in {"exit", "quit", "q"}:
                 break
             if not os.path.exists(pdf):
                 print("❌ File not found")
                 continue
+
             sections = self.load_guidelines(pdf)
             if not sections:
                 continue
 
-            safe = (
-                re.sub(r"[^\w\s-]", "", self.diagnosis_name)
-                .strip()
-                .replace(" ", "_")[:50]
-            )
-            outfile = Path(f"рекомендации_{safe}.txt")
+            safe = re.sub(r"[^\w\s-]", "", self.diagnosis_name).strip().replace(" ", "_")[:50]
+            outfile = Path(f"test.txt")
             with outfile.open("w", encoding="utf-8") as f:
                 f.write(f"# Расширенный алгоритм лечения {self.diagnosis_name}\n\n")
                 self._generate_streaming(sections, f)
-            print("✅ Saved →", outfile.absolute())
+            print("\n✅ Saved →", outfile.absolute())
 
 
+# ----------------------------------------------------------
 if __name__ == "__main__":
     try:
         MedicalAssistant().run()
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
         print("❌ Fatal:", e)
-    finally:
-        input("Press Enter to exit")
