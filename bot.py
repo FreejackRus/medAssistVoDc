@@ -16,7 +16,7 @@ from langchain_community.vectorstores import FAISS
 import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-OLLAMA_MODEL: str = "DeepSeek-R1-0528-Qwen3-8B-GGUF "          # сначала «ollama pull <name>»
+OLLAMA_MODEL: str = "hf.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:BF16"          # сначала «ollama pull <name>»
 EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
@@ -155,11 +155,11 @@ class MedicalAssistant:
         #### II. Этапы диагностики
         1. **Первичное обследование**:
            - Действия врача
-           - Рекомендуемые исследования (ID услуг)
+           - Рекомендуемые исследования 
            - Интерпретация результатов
         2. **Дополнительные методы диагностики**:
            - Цели и задачи исследований
-           - Рекомендуемые процедуры (ID услуг)
+           - Рекомендуемые процедуры 
            - Особенности проведения
 
         #### III. Дифференциальная диагностика
@@ -173,7 +173,7 @@ class MedicalAssistant:
         2. **Медикаментозная терапия**:
            - Препараты, дозировки, длительность
         3. **Процедуры и операции**:
-           - Рекомендуемые услуги (ID)
+           - Рекомендуемые услуги 
            - Подготовка, выполнение, реабилитация
         4. **Мониторинг эффективности**
            - Критерии улучшения состояния
