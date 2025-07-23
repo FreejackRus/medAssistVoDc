@@ -5,36 +5,101 @@
   <title>ИИ-ассистент эксперта</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Marked + Highlight -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
   <style>
-    /* базовые стили Markdown */
-    #result h1, #result h2, #result h3, #result h4 { @apply text-sky-700 font-bold mt-5 mb-2; }
-    #result ul { @apply list-disc list-inside text-slate-800; }
-    #result ol { @apply list-decimal list-inside text-slate-800; }
-    #result pre { @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3; }
-    #result code { @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600; }
-    #result blockquote { @apply border-l-4 border-sky-400 pl-4 italic text-slate-600; }
+    body {
+      background-color: #f1f5f9;
+      font-family: 'Inter', Arial, sans-serif;
+    }
+
+    #result h1, #result h2, #result h3, #result h4 {
+      color: #0c4a6e;
+      font-weight: 700;
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    #result ul, #result ol {
+      margin: 0.5em 0;
+      padding-left: 1.5em;
+    }
+
+    #result ul { list-style: disc; }
+    #result ol { list-style: decimal; }
+
+    #result ul li, #result ol li {
+      color: #1e293b;
+      margin: 0.3em 0;
+    }
+
+    #result pre {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 1em 0;
+    }
+
+    #result code {
+      background: #e5e7eb;
+      color: #dc2626;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 0.875em;
+      font-family: monospace;
+    }
+
+    #result blockquote {
+      border-left: 4px solid #0ea5e9;
+      background: #eff6ff;
+      padding: 0.8em 1em;
+      margin: 1em 0;
+      font-style: italic;
+      color: #4b5563;
+    }
+
+    /* Таблицы — ключевое исправление */
+    #result table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.2em 0;
+    }
+
+    #result th, #result td {
+      border: 1px solid #d1d5db;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    #result th {
+      background-color: #f3f4f6;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    #result tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+
+    #result tr:hover {
+      background-color: #f1f5f9;
+    }
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
-
-<!-- контейнер по центру -->
 <div class="max-w-3xl mx-auto py-12 px-4">
-
-  <!-- шапка -->
   <div class="text-center mb-10">
     <h1 class="text-5xl font-bold text-slate-900 mb-4">ИИ-ассистент эксперта</h1>
     <p class="text-slate-600 text-lg">
-      Загрузите клиническую рекомендацию (PDF) и получите структурированный алгоритм в формате Markdown.
+      Загрузите клиническую рекомендацию (PDF) и получите структурированный алгоритм.
     </p>
   </div>
 
-  <!-- кнопка загрузки -->
   <form id="uploadForm" class="text-center mb-8">
     <label class="inline-block cursor-pointer">
       <input type="file" name="pdf" accept=".pdf" required class="hidden">
@@ -44,92 +109,109 @@
     </label>
   </form>
 
-  <!-- область вывода -->
   <div id="result"
-       class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
+       class="border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
-  <button id="downloadBtn"
-        class="hidden ml-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
-  Скачать PDF
-</button>
 
+  <button id="downloadBtn"
+          class="hidden ml-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow mt-4 transition">
+    Скачать PDF
+  </button>
 </div>
 
 <script>
-const form   = document.getElementById('uploadForm');
-const input  = form.querySelector('input[type=file]');
-const result = document.getElementById('result');
+  const form = document.getElementById('uploadForm');
+  const input = form.querySelector('input[type="file"]');
+  const result = document.getElementById('result');
+  const downloadBtn = document.getElementById('downloadBtn');
 
-// настройки Marked
-marked.setOptions({
-  breaks: true,
-  highlight: function(code, lang) {
-    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-    return hljs.highlight(code, { language }).value;
-  }
-});
+  let fullMarkdown = '';
 
-// обработка загрузки
-form.addEventListener('change', async e => {
-  const file = input.files[0];
-  if (!file) return;
-
-  result.textContent = '';
-  result.classList.remove('hidden');
-
-  const body = new FormData();
-  body.append('pdf', file);
-
-  const res = await fetch('/generate', { method: 'POST', body });
-  const reader = res.body.getReader();
-  const dec = new TextDecoder('utf-8');
-  let buffer = '';
-
-  while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    const lines = dec.decode(value).split('\n\n');
-    for (const l of lines) {
-      if (l.startsWith('data:')) {
-        const txt = JSON.parse(l.slice(6));
-        buffer += txt;
-        result.innerHTML = marked.parse(buffer);
-        // подсветка кода
-        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
-        result.scrollTop = result.scrollHeight;
-      }
+  // Настройка marked: включаем таблицы (gfm) и подсветку
+  marked.setOptions({
+    gfm: true,
+    breaks: true,
+    highlight: function (code, lang) {
+      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+      return hljs.highlight(code, { language }).value;
     }
-  }
-});
-  et fullMarkdown = '';
-
-document.getElementById('downloadBtn').addEventListener('click', async () => {
-  const res = await fetch('/download_pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown: fullMarkdown })
   });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'algorithm.pdf';
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
-/* при получении стрима накапливаем Markdown */
-let buffer = '';
-...
-buffer += txt;
-fullMarkdown = buffer;   // сохраняем
-result.innerHTML = marked.parse(buffer);
-...
-/* показываем кнопку после окончания стрима */
-reader.read().then(({done}) => {
-  if (done) document.getElementById('downloadBtn').classList.remove('hidden');
-});
+  form.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    result.innerHTML = '<p class="text-slate-600">Обработка...</p>';
+    fullMarkdown = '';
+    result.classList.remove('hidden');
+    downloadBtn.classList.add('hidden');
+
+    const formData = new FormData();
+    formData.append('pdf', file);
+
+    try {
+      const res = await fetch('/generate', { method: 'POST', body: formData });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const text = JSON.parse(line.slice(6));
+              fullMarkdown += text;
+
+              // Парсим Markdown → HTML
+              result.innerHTML = marked.parse(fullMarkdown);
+
+              // Подсветка кода
+              document.querySelectorAll('#result pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+
+              // Прокрутка
+              result.scrollTop = result.scrollHeight;
+            } catch (e) {
+              console.error('Ошибка парсинга:', e);
+            }
+          }
+        }
+      }
+
+      // Показываем кнопку после завершения
+      downloadBtn.classList.remove('hidden');
+
+    } catch (error) {
+      result.innerHTML = `<p class="text-red-600">Ошибка: ${error.message}</p>`;
+    }
+  });
+
+  // Кнопка "Скачать PDF"
+  downloadBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/download_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: fullMarkdown })
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'алгоритм_лечения.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('Ошибка при скачивании PDF: ' + error.message);
+    }
+  });
 </script>
-
 </body>
 </html>

@@ -14,7 +14,6 @@ from bot import MedicalAssistant
 
 app = FastAPI(title="Medical Assistant Web")
 templates_dir = Path(__file__).parent / "templates"
-
 assistant = MedicalAssistant()
 
 
@@ -23,7 +22,7 @@ def index():
     return HTMLResponse((templates_dir / "index.html").read_text(encoding="utf-8"))
 
 
-# ---------- SSE ----------
+# ---------- SSE Stream Writer ----------
 class AsyncStreamWriter:
     def __init__(self, queue: asyncio.Queue[str]) -> None:
         self.queue = queue
@@ -37,8 +36,9 @@ class AsyncStreamWriter:
         pass
 
     def close(self) -> None:
-        self._closed = True
-        self.queue.put_nowait("")
+        if not self._closed:
+            self._closed = True
+            self.queue.put_nowait("")
 
     def __enter__(self):
         return self
@@ -48,13 +48,14 @@ class AsyncStreamWriter:
 
 
 @app.post("/generate")
-async def generate(pdf: UploadFile = File(...)):
+async def generate(pdf: UploadFile = File(...)) -> StreamingResponse:
     tmp_dir = Path("tmp")
-    tmp_dir.mkdir(exist_ok=True)
+    tmp_dir.mkdir(exist_ok=True, parents=True)
     pdf_path = tmp_dir / pdf.filename
     pdf_path.write_bytes(await pdf.read())
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, str(pdf_path)
         )
@@ -62,17 +63,23 @@ async def generate(pdf: UploadFile = File(...)):
             yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
             return
 
-        q: asyncio.Queue[str] = asyncio.Queue()
+        q = asyncio.Queue()
         writer = AsyncStreamWriter(q)
 
+        # Запускаем генерацию в фоне
         loop = asyncio.get_running_loop()
         task = loop.run_in_executor(None, assistant._generate_streaming, sections, writer)
 
         while True:
-            chunk = await q.get()
-            if chunk == "":
+            try:
+                chunk = await q.get()
+                if chunk == "":
+                    break
+                # Отправляем как SSE
+                yield f"data: {json.dumps(chunk)}\n\n"
+            except Exception as e:
+                print("Error in stream:", e)
                 break
-            yield f"data: {json.dumps(chunk)}\n\n"
 
         await task
         pdf_path.unlink(missing_ok=True)
@@ -80,40 +87,99 @@ async def generate(pdf: UploadFile = File(...)):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# ---------- PDF ----------
+# ---------- PDF Generation ----------
 @app.post("/download_pdf")
-async def download_pdf(request: dict) -> Response:
-    md = request.get("markdown", "")
-    html_body = markdown.markdown(md, extensions=["tables", "fenced_code", "nl2br"])
-    full_html = textwrap.dedent(
-        f"""
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <style>
-              body {{
-                font-family: "DejaVu Sans", "Helvetica", "Arial", sans-serif;
-                line-height: 1.6; margin: 40px; color: #111827;
-              }}
-              h1, h2, h3 {{ color: #0c4a6e; margin-top: 1.2em; }}
-              pre {{
-                background: #f3f4f6; padding: 12px; border-radius: 6px;
-                font-size: 0.875em; overflow-x: auto;
-              }}
-              code {{ background: #e5e7eb; padding: 2px 5px; border-radius: 4px; }}
-              blockquote {{
-                border-left: 4px solid #0ea5e9; padding-left: 1em; color: #4b5563;
-                font-style: italic;
-              }}
-            </style>
-          </head>
-          <body>{html_body}</body>
-        </html>
-        """
-    )
-    pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=algorithm.pdf"},
-    )
+async def download_pdf(request: Request) -> Response:
+    body = await request.json()
+    md = body.get("markdown", "").strip()
+
+    if not md:
+        md = "## Нет данных для отображения"
+
+    try:
+        # Конвертируем Markdown → HTML с поддержкой таблиц
+        html_body = markdown.markdown(
+            md,
+            extensions=["tables", "fenced_code", "nl2br"]
+        )
+    except Exception as e:
+        html_body = f"<p><em>Ошибка обработки: {str(e)}</em></p>"
+
+    # Полный HTML с кириллическим шрифтом
+    full_html = textwrap.dedent(f"""
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="utf-8">
+      <title>Клинические рекомендации</title>
+      <style>
+        @page {{
+          size: A4;
+          margin: 2cm;
+          @bottom-center {{
+            content: "Страница " counter(page) " из " counter(pages);
+            font-size: 10px;
+            color: #6b7280;
+          }}
+        }}
+        body {{
+          font-family: "DejaVu Sans", "Liberation Sans", sans-serif;
+          font-size: 12pt;
+          line-height: 1.6;
+          color: #1f2937;
+          margin: 0;
+          padding: 0;
+        }}
+        h1, h2, h3 {{
+          color: #0c4a6e;
+        }}
+        pre {{
+          background: #f3f4f6;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          padding: 12px;
+          overflow-x: auto;
+          font-size: 0.9em;
+        }}
+        code {{
+          background: #e5e7eb;
+          padding: 2px 5px;
+          border-radius: 4px;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin: 1em 0;
+        }}
+        th, td {{
+          border: 1px solid #d1d5db;
+          padding: 8px;
+          text-align: left;
+        }}
+        th {{
+          background-color: #f3f4f6;
+          font-weight: 600;
+        }}
+        tr:nth-child(even) {{
+          background-color: #f8fafc;
+        }}
+      </style>
+    </head>
+    <body>
+      <h1>Клинические рекомендации</h1>
+      {html_body}
+    </body>
+    </html>
+    """)
+
+    try:
+        pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=алгоритм_лечения.pdf"}
+        )
+    except Exception as e:
+        # Fallback: возвращаем HTML, чтобы увидеть ошибку
+        error_html = f"<h2>Ошибка генерации PDF</h2><p>{str(e)}</p><pre>{full_html[:2000]}...</pre>"
+        return Response(content=error_html, media_type="text/html")
