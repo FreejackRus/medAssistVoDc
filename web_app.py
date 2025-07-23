@@ -1,34 +1,29 @@
 # web_app.py
 import asyncio
 import json
-import os
+import textwrap
 from pathlib import Path
 from typing import AsyncGenerator
 
 import markdown
-import json
-from typing import List, Dict
-import textwrap
 import weasyprint
-
 from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, Response
 
-from bot import MedicalAssistant  # ваш класс
+from bot import MedicalAssistant
 
 app = FastAPI(title="Medical Assistant Web")
-templates = Path(__file__).with_suffix("").parent / "templates"
+templates_dir = Path(__file__).parent / "templates"
 
-# глобальный инстанс
 assistant = MedicalAssistant()
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return HTMLResponse((templates / "index.html").read_text(encoding="utf-8"))
+def index():
+    return HTMLResponse((templates_dir / "index.html").read_text(encoding="utf-8"))
 
 
-# --------------------------- SSE ---------------------------
+# ---------- SSE ----------
 class AsyncStreamWriter:
     def __init__(self, queue: asyncio.Queue[str]) -> None:
         self.queue = queue
@@ -57,8 +52,7 @@ async def generate(pdf: UploadFile = File(...)):
     tmp_dir = Path("tmp")
     tmp_dir.mkdir(exist_ok=True)
     pdf_path = tmp_dir / pdf.filename
-    with open(pdf_path, "wb") as f:
-        f.write(await pdf.read())
+    pdf_path.write_bytes(await pdf.read())
 
     async def event_stream() -> AsyncGenerator[str, None]:
         sections = await asyncio.get_running_loop().run_in_executor(
@@ -86,12 +80,9 @@ async def generate(pdf: UploadFile = File(...)):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# -------------------------- PDF --------------------------
+# ---------- PDF ----------
 @app.post("/download_pdf")
 async def download_pdf(request: dict) -> Response:
-    """
-    Принимает {"markdown": "..."} -> возвращает PDF
-    """
     md = request.get("markdown", "")
     html_body = markdown.markdown(md, extensions=["tables", "fenced_code", "nl2br"])
     full_html = textwrap.dedent(
@@ -126,37 +117,3 @@ async def download_pdf(request: dict) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=algorithm.pdf"},
     )
-
-
-@app.post("/generate_table")
-async def generate_table(pdf: UploadFile = File(...)):
-    """
-    Отдаёт поток JSON-строк вместо текста:
-    data: {"row":{"Параметр":"Значение","Доза":"500 мг"}}\n\n
-    """
-    tmp_dir = Path("tmp")
-    tmp_dir.mkdir(exist_ok=True)
-    pdf_path = tmp_dir / pdf.filename
-    with open(pdf_path, "wb") as f:
-        f.write(await pdf.read())
-
-    async def event_stream() -> AsyncGenerator[str, None]:
-        sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(pdf_path)
-        )
-        if not sections:
-            yield f"data: {json.dumps({'error':'Не удалось прочитать PDF'})}\n\n"
-            return
-
-        # пример: превращаем текст в таблицу «ключ-значение»
-        buffer = []
-        for key, text in sections.items():
-            # упрощённо: каждая строка = пара «раздел - текст»
-            buffer.append({"Раздел": key, "Содержание": text[:200] + "…"})
-            yield f"data: {json.dumps({'row': buffer[-1]})}\n\n"
-
-        # финальный объект с полным набором для PDF
-        yield f"data: {json.dumps({'done': buffer})}\n\n"
-        pdf_path.unlink(missing_ok=True)
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
