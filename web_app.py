@@ -1,6 +1,9 @@
 # web_app.py
 import asyncio
 import json
+import markdown
+import textwrap
+import weasyprint
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Request
