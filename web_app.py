@@ -1,6 +1,7 @@
 # web_app.py
 import asyncio
 import json
+import re
 import textwrap
 from pathlib import Path
 from typing import AsyncGenerator
@@ -23,7 +24,7 @@ def index():
     return HTMLResponse((templates_dir / "index.html").read_text(encoding="utf-8"))
 
 
-# ---------- SSE ----------
+# ---------- SSE в формате таблицы ----------
 class AsyncStreamWriter:
     def __init__(self, queue: asyncio.Queue[str]) -> None:
         self.queue = queue
@@ -47,8 +48,27 @@ class AsyncStreamWriter:
         self.close()
 
 
-@app.post("/generate")
-async def generate(pdf: UploadFile = File(...)):
+def parse_markdown_to_rows(md: str) -> list[dict]:
+    """Превращает Markdown-таблицу в список словарей."""
+    # ищем таблицу: | раздел | подраздел | детали |
+    table = re.findall(r'^\|(.+?)\|\s*$', md, flags=re.M)
+    if not table:
+        return []
+
+    rows = []
+    for line in table:
+        parts = [p.strip() for p in line.split('|') if p.strip()]
+        if len(parts) == 3 and parts[0] and not parts[0].startswith('--'):
+            rows.append({
+                "Раздел": parts[0],
+                "Подраздел": parts[1],
+                "Детали": parts[2]
+            })
+    return rows
+
+
+@app.post("/generate_table")
+async def generate_table(pdf: UploadFile = File(...)):
     tmp_dir = Path("tmp")
     tmp_dir.mkdir(exist_ok=True)
     pdf_path = tmp_dir / pdf.filename
@@ -59,59 +79,61 @@ async def generate(pdf: UploadFile = File(...)):
             None, assistant.load_guidelines, str(pdf_path)
         )
         if not sections:
-            yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
+            yield f"data: {json.dumps({'error':'Не удалось прочитать PDF'})}\n\n"
             return
 
-        q: asyncio.Queue[str] = asyncio.Queue()
-        writer = AsyncStreamWriter(q)
+        # собираем весь Markdown
+        full_md = "\n".join(sections.values())
+        rows = parse_markdown_to_rows(full_md)
 
-        loop = asyncio.get_running_loop()
-        task = loop.run_in_executor(None, assistant._generate_streaming, sections, writer)
+        # стримим по строке
+        for row in rows:
+            yield f"data: {json.dumps({'row': row})}\n\n"
 
-        while True:
-            chunk = await q.get()
-            if chunk == "":
-                break
-            yield f"data: {json.dumps(chunk)}\n\n"
-
-        await task
+        # финальный объект для PDF
+        yield f"data: {json.dumps({'done': rows})}\n\n"
         pdf_path.unlink(missing_ok=True)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# ---------- PDF ----------
-@app.post("/download_pdf")
-async def download_pdf(request: dict) -> Response:
-    md = request.get("markdown", "")
-    html_body = markdown.markdown(md, extensions=["tables", "fenced_code", "nl2br"])
-    full_html = textwrap.dedent(
+# ---------- PDF из таблицы ----------
+@app.post("/download_table_pdf")
+async def download_table_pdf(request: dict) -> Response:
+    rows = request.get("rows", [])
+    if not rows:
+        return Response(b"", media_type="application/pdf")
+
+    cols = rows[0].keys()
+    head = "".join(f"<th>{c}</th>" for c in cols)
+    body = "".join(
+        "<tr>" + "".join(f"<td>{row.get(c,'')}</td>" for c in cols) + "</tr>"
+        for row in rows
+    )
+    html = textwrap.dedent(
         f"""
         <html>
           <head>
             <meta charset="utf-8">
+            <title>Рекомендации</title>
             <style>
-              body {{
-                font-family: "DejaVu Sans", "Helvetica", "Arial", sans-serif;
-                line-height: 1.6; margin: 40px; color: #111827;
-              }}
-              h1, h2, h3 {{ color: #0c4a6e; margin-top: 1.2em; }}
-              pre {{
-                background: #f3f4f6; padding: 12px; border-radius: 6px;
-                font-size: 0.875em; overflow-x: auto;
-              }}
-              code {{ background: #e5e7eb; padding: 2px 5px; border-radius: 4px; }}
-              blockquote {{
-                border-left: 4px solid #0ea5e9; padding-left: 1em; color: #4b5563;
-                font-style: italic;
-              }}
+              body {{font-family:DejaVu Sans,Arial,Helvetica,sans-serif;margin:40px;color:#111827;}}
+              table {{border-collapse:collapse;width:100%;}}
+              th,td {{border:1px solid #d1d5db;padding:8px;text-align:left;}}
+              th {{background:#f3f4f6;color:#0c4a6e;}}
             </style>
           </head>
-          <body>{html_body}</body>
+          <body>
+            <h1>Клинические рекомендации</h1>
+            <table>
+              <thead><tr>{head}</tr></thead>
+              <tbody>{body}</tbody>
+            </table>
+          </body>
         </html>
         """
     )
-    pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
