@@ -6,16 +6,67 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
-    body{background:#f1f5f9;font-family:Inter,Arial,Helvetica,sans-serif;}
-    #result h1,#result h2,#result h3,#result h4{@apply text-sky-700 font-bold mt-5 mb-2;}
-    #result ul,#result ol{@apply list-disc list-inside text-slate-800;}
-    #result pre{@apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;}
-    #result code{@apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;}
-    #result blockquote{@apply border-l-4 border-sky-400 pl-4 italic text-slate-600;}
+    body {
+      background: #f1f5f9;
+      font-family: Inter, Arial, Helvetica, sans-serif;
+    }
+
+    /* Стили для контента в #result */
+    #result h1,
+    #result h2,
+    #result h3,
+    #result h4 {
+      @apply text-sky-700 font-bold mt-5 mb-2;
+    }
+
+    #result ul,
+    #result ol {
+      @apply list-disc list-inside text-slate-800;
+    }
+
+    #result pre {
+      @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;
+    }
+
+    #result code {
+      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;
+    }
+
+    #result blockquote {
+      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600;
+    }
+
+    /* Стили для таблиц (важно: без @apply, так как Tailwind CDN не поддерживает) */
+    #result table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+
+    #result th,
+    #result td {
+      border: 1px solid #cbd5e1;
+      padding: 0.75rem 1rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    #result th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    #result tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+
+    #result tr:hover {
+      background-color: #f1f5f9;
+    }
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
@@ -49,67 +100,93 @@
 </div>
 
 <script>
-const form   = document.getElementById('uploadForm');
-const input  = form.querySelector('input[type=file]');
-const result = document.getElementById('result');
-const dBtn   = document.getElementById('downloadBtn');
+  const form = document.getElementById('uploadForm');
+  const input = form.querySelector('input[type="file"]');
+  const result = document.getElementById('result');
+  const dBtn = document.getElementById('downloadBtn');
 
-let fullMarkdown = '';
-marked.setOptions({
-  breaks: true,
-  highlight: (code, lang) => {
-    const l = hljs.getLanguage(lang) ? lang : 'plaintext';
-    return hljs.highlight(code, {language: l}).value;
-  }
-});
+  let fullMarkdown = '';
 
-form.addEventListener('change', async () => {
-  const file = input.files[0];
-  if (!file) return;
-
-  result.innerHTML = '';
-  fullMarkdown = '';
-  result.classList.remove('hidden');
-  dBtn.classList.add('hidden');
-
-  const body = new FormData();
-  body.append('pdf', file);
-
-  const res = await fetch('/generate', {method: 'POST', body});
-  const reader = res.body.getReader();
-  const dec = new TextDecoder('utf-8');
-
-  while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    const lines = dec.decode(value).split('\n\n');
-    for (const l of lines) {
-      if (l.startsWith('data:')) {
-        const txt = JSON.parse(l.slice(6));
-        fullMarkdown += txt;
-        result.innerHTML = marked.parse(fullMarkdown);
-        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
-        result.scrollTop = result.scrollHeight;
-      }
+  // Настройка marked: включаем GFM (GitHub Flavored Markdown), включая таблицы
+  marked.setOptions({
+    gfm: true,
+    breaks: true,
+    highlight: (code, lang) => {
+      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+      return hljs.highlight(code, { language }).value;
     }
-  }
-  dBtn.classList.remove('hidden');
-});
-
-dBtn.addEventListener('click', async () => {
-  const res = await fetch('/download_pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown: fullMarkdown })
   });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'algorithm.pdf';
-  a.click();
-  URL.revokeObjectURL(url);
-});
+
+  form.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    result.innerHTML = '';
+    fullMarkdown = '';
+    result.classList.remove('hidden');
+    dBtn.classList.add('hidden');
+
+    const body = new FormData();
+    body.append('pdf', file);
+
+    try {
+      const res = await fetch('/generate', { method: 'POST', body });
+      if (!res.body) throw new Error('No stream returned');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const text = JSON.parse(line.slice(6));
+              fullMarkdown += text;
+              result.innerHTML = marked.parse(fullMarkdown);
+
+              // Подсветка синтаксиса
+              document.querySelectorAll('#result pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+
+              // Прокрутка вниз
+              result.scrollTop = result.scrollHeight;
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+
+      dBtn.classList.remove('hidden');
+    } catch (error) {
+      result.innerHTML = `<p class="text-red-600">Ошибка: ${error.message}</p>`;
+      console.error(error);
+    }
+  });
+
+  // Обработчик скачивания PDF
+  dBtn.addEventListener('click', async () => {
+    const res = await fetch('/download_pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown: fullMarkdown })
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'algorithm.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 </script>
+
 </body>
 </html>
