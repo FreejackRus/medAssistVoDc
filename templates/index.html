@@ -5,26 +5,32 @@
   <title>ИИ-ассистент эксперта</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Marked + Highlight -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
   <style>
-    /* базовые стили Markdown */
-    #result h1, #result h2, #result h3, #result h4 { @apply text-sky-700 font-bold mt-5 mb-2; }
-    #result ul { @apply list-disc list-inside text-slate-800; }
-    #result ol { @apply list-decimal list-inside text-slate-800; }
-    #result pre { @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3; }
-    #result code { @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600; }
-    #result blockquote { @apply border-l-4 border-sky-400 pl-4 italic text-slate-600; }
+    /* цветовые акценты для Markdown */
+    #result h1, #result h2, #result h3, #result h4 {
+      @apply text-sky-700 font-bold mt-5 mb-2;
+    }
+    #result ul, #result ol {
+      @apply list-disc list-inside text-slate-800;
+    }
+    #result pre {
+      @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;
+    }
+    #result code {
+      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;
+    }
+    #result blockquote {
+      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600;
+    }
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
 
-<!-- контейнер по центру -->
-<div class="max-w-3xl mx-auto py-12 px-4">
+<div class="max-w-4xl mx-auto py-12 px-4">
 
   <!-- шапка -->
   <div class="text-center mb-10">
@@ -34,56 +40,60 @@
     </p>
   </div>
 
-  <!-- кнопка загрузки -->
-  <form id="uploadForm" class="text-center mb-8">
-    <label class="inline-block cursor-pointer">
-      <input type="file" name="pdf" accept=".pdf" required class="hidden">
-      <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition">
-        Выбрать PDF
-      </span>
-    </label>
-  </form>
+  <!-- форма + кнопки -->
+  <div class="flex justify-center items-center gap-4 mb-8">
+    <form id="uploadForm">
+      <label class="cursor-pointer">
+        <input type="file" name="pdf" accept=".pdf" required class="hidden">
+        <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
+          Выбрать PDF
+        </span>
+      </label>
+    </form>
+    <button id="downloadBtn"
+            class="hidden bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
+      Скачать PDF
+    </button>
+  </div>
 
   <!-- область вывода -->
   <div id="result"
        class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
-  <button id="downloadBtn"
-        class="hidden ml-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
-  Скачать PDF
-</button>
-
 </div>
 
 <script>
 const form   = document.getElementById('uploadForm');
 const input  = form.querySelector('input[type=file]');
 const result = document.getElementById('result');
+const dBtn   = document.getElementById('downloadBtn');
+
+let fullMarkdown = '';
 
 // настройки Marked
 marked.setOptions({
   breaks: true,
-  highlight: function(code, lang) {
-    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-    return hljs.highlight(code, { language }).value;
+  highlight: (code, lang) => {
+    const l = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, {language: l}).value;
   }
 });
 
-// обработка загрузки
-form.addEventListener('change', async e => {
+form.addEventListener('change', async () => {
   const file = input.files[0];
   if (!file) return;
 
-  result.textContent = '';
+  result.innerHTML = '';
+  fullMarkdown = '';
   result.classList.remove('hidden');
+  dBtn.classList.add('hidden');
 
   const body = new FormData();
   body.append('pdf', file);
 
-  const res = await fetch('/generate', { method: 'POST', body });
+  const res = await fetch('/generate', {method: 'POST', body});
   const reader = res.body.getReader();
   const dec = new TextDecoder('utf-8');
-  let buffer = '';
 
   while (true) {
     const {done, value} = await reader.read();
@@ -92,22 +102,22 @@ form.addEventListener('change', async e => {
     for (const l of lines) {
       if (l.startsWith('data:')) {
         const txt = JSON.parse(l.slice(6));
-        buffer += txt;
-        result.innerHTML = marked.parse(buffer);
-        // подсветка кода
+        fullMarkdown += txt;
+        result.innerHTML = marked.parse(fullMarkdown);
         document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
         result.scrollTop = result.scrollHeight;
       }
     }
   }
+  dBtn.classList.remove('hidden');
 });
-  et fullMarkdown = '';
 
-document.getElementById('downloadBtn').addEventListener('click', async () => {
+// скачивание PDF
+dBtn.addEventListener('click', async () => {
   const res = await fetch('/download_pdf', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown: fullMarkdown })
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({markdown: fullMarkdown})
   });
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -117,19 +127,6 @@ document.getElementById('downloadBtn').addEventListener('click', async () => {
   a.click();
   URL.revokeObjectURL(url);
 });
-
-/* при получении стрима накапливаем Markdown */
-let buffer = '';
-...
-buffer += txt;
-fullMarkdown = buffer;   // сохраняем
-result.innerHTML = marked.parse(buffer);
-...
-/* показываем кнопку после окончания стрима */
-reader.read().then(({done}) => {
-  if (done) document.getElementById('downloadBtn').classList.remove('hidden');
-});
 </script>
-
 </body>
 </html>

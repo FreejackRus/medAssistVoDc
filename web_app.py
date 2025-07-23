@@ -5,32 +5,29 @@ import os
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import Response
-import markdown, weasyprint, io, textwrap
+import markdown
+import textwrap
+import weasyprint
 
-# импортируем ваш существующий класс
-from bot import MedicalAssistant
+from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
+
+from bot import MedicalAssistant  # ваш класс
 
 app = FastAPI(title="Medical Assistant Web")
-templates = Jinja2Templates(directory="templates")
+templates = Path(__file__).with_suffix("").parent / "templates"
 
-# создаём один глобальный инстанс (индекс услуг загрузится один раз)
+# глобальный инстанс
 assistant = MedicalAssistant()
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return HTMLResponse((templates / "index.html").read_text(encoding="utf-8"))
 
 
-# ------------------------------------------------------------------
-# ВСПОМОГАТЕЛЬНЫЙ КЛАСС-«ФАЙЛ» ДЛЯ ПОТОКА
-# ------------------------------------------------------------------
+# --------------------------- SSE ---------------------------
 class AsyncStreamWriter:
-    """Пишет в asyncio.Queue, чтобы можно было асинхронно читать поток."""
     def __init__(self, queue: asyncio.Queue[str]) -> None:
         self.queue = queue
         self._closed = False
@@ -44,7 +41,7 @@ class AsyncStreamWriter:
 
     def close(self) -> None:
         self._closed = True
-        self.queue.put_nowait("")  # маркер EOF
+        self.queue.put_nowait("")
 
     def __enter__(self):
         return self
@@ -53,13 +50,8 @@ class AsyncStreamWriter:
         self.close()
 
 
-# ------------------------------------------------------------------
-# SSE-ЭНДПОИНТ
-# ------------------------------------------------------------------
 @app.post("/generate")
 async def generate(pdf: UploadFile = File(...)):
-    """Получаем PDF и стримим результат в браузер (SSE)."""
-    # 1. Сохраняем временный PDF
     tmp_dir = Path("tmp")
     tmp_dir.mkdir(exist_ok=True)
     pdf_path = tmp_dir / pdf.filename
@@ -67,7 +59,6 @@ async def generate(pdf: UploadFile = File(...)):
         f.write(await pdf.read())
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        # 2. Парсим PDF в треде
         sections = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, str(pdf_path)
         )
@@ -75,20 +66,15 @@ async def generate(pdf: UploadFile = File(...)):
             yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
             return
 
-        # 3. Очередь для потоковой передачи
         q: asyncio.Queue[str] = asyncio.Queue()
         writer = AsyncStreamWriter(q)
 
-        # 4. Запускаем тяжёлый sync-код в треде
         loop = asyncio.get_running_loop()
-        task = loop.run_in_executor(
-            None, assistant._generate_streaming, sections, writer
-        )
+        task = loop.run_in_executor(None, assistant._generate_streaming, sections, writer)
 
-        # 5. Отдаём клиенту
         while True:
             chunk = await q.get()
-            if chunk == "":          # конец потока
+            if chunk == "":
                 break
             yield f"data: {json.dumps(chunk)}\n\n"
 
@@ -97,30 +83,44 @@ async def generate(pdf: UploadFile = File(...)):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+
+# -------------------------- PDF --------------------------
 @app.post("/download_pdf")
 async def download_pdf(request: dict) -> Response:
     """
-    Принимает { "markdown": "..." } -> возвращает PDF
+    Принимает {"markdown": "..."} -> возвращает PDF
     """
     md = request.get("markdown", "")
-    html_body = markdown.markdown(md, extensions=['tables', 'fenced_code'])
-    full_html = textwrap.dedent(f"""
+    html_body = markdown.markdown(md, extensions=["tables", "fenced_code", "nl2br"])
+    full_html = textwrap.dedent(
+        f"""
         <html>
           <head>
             <meta charset="utf-8">
             <style>
-              body {{ font-family: "DejaVu Sans", sans-serif; margin: 40px; }}
-              h1,h2,h3 {{ color:#0c4a6e; }}
-              pre {{ background:#f7f7f7; padding:8px; border-radius:4px; }}
-              code {{ background:#efefef; padding:2px 4px; border-radius:2px; }}
+              body {{
+                font-family: "DejaVu Sans", "Helvetica", "Arial", sans-serif;
+                line-height: 1.6; margin: 40px; color: #111827;
+              }}
+              h1, h2, h3 {{ color: #0c4a6e; margin-top: 1.2em; }}
+              pre {{
+                background: #f3f4f6; padding: 12px; border-radius: 6px;
+                font-size: 0.875em; overflow-x: auto;
+              }}
+              code {{ background: #e5e7eb; padding: 2px 5px; border-radius: 4px; }}
+              blockquote {{
+                border-left: 4px solid #0ea5e9; padding-left: 1em; color: #4b5563;
+                font-style: italic;
+              }}
             </style>
           </head>
           <body>{html_body}</body>
         </html>
-    """)
+        """
+    )
     pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=algorithm.pdf"}
+        headers={"Content-Disposition": "attachment; filename=algorithm.pdf"},
     )
