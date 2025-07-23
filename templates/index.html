@@ -3,28 +3,39 @@
 <head>
   <meta charset="utf-8"/>
   <title>ИИ-ассистент эксперта</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <!-- Tailwind CSS через CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Поддержка Markdown с таблицами -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Подсветка синтаксиса -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
   <style>
     body {
-      background: #f1f5f9;
-      font-family: Inter, Arial, Helvetica, sans-serif;
+      background-color: #f1f5f9;
+      font-family: 'Inter', Arial, sans-serif;
     }
 
     /* Стили для контента в #result */
-    #result h1,
-    #result h2,
-    #result h3,
-    #result h4 {
-      @apply text-sky-700 font-bold mt-5 mb-2;
+    #result {
+      line-height: 1.7;
     }
 
-    #result ul,
-    #result ol {
-      @apply list-disc list-inside text-slate-800;
+    #result h1, #result h2, #result h3, #result h4 {
+      @apply text-sky-700 font-bold mt-6 mb-3;
+    }
+
+    #result p {
+      @apply mb-3 text-slate-800 leading-relaxed;
+    }
+
+    #result ul, #result ol {
+      @apply list-disc list-inside mb-4 ml-5 text-slate-800;
     }
 
     #result pre {
@@ -32,40 +43,37 @@
     }
 
     #result code {
-      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;
+      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600 font-mono;
     }
 
     #result blockquote {
-      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600;
+      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600 bg-sky-50 p-2 rounded-r-md my-3;
     }
 
-    /* Стили для таблиц (важно: без @apply, так как Tailwind CDN не поддерживает) */
+    /* СТИЛИ ДЛЯ ТАБЛИЦ — ВАЖНО */
     #result table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 1.5rem 0;
+      @apply w-full border-collapse my-4;
     }
 
-    #result th,
-    #result td {
-      border: 1px solid #cbd5e1;
-      padding: 0.75rem 1rem;
-      text-align: left;
-      vertical-align: top;
+    #result th, #result td {
+      @apply border border-slate-300 px-4 py-3 text-left align-top;
     }
 
     #result th {
-      background-color: #f1f5f9;
-      font-weight: 600;
-      color: #1e293b;
+      @apply bg-slate-100 font-semibold text-slate-800;
     }
 
     #result tr:nth-child(even) {
-      background-color: #f8fafc;
+      @apply bg-slate-50;
     }
 
     #result tr:hover {
-      background-color: #f1f5f9;
+      @apply bg-slate-100;
+    }
+
+    /* Для корректного отображения переносов строк в ячейках */
+    #result td p, #result th p {
+      @apply m-0;
     }
   </style>
 </head>
@@ -95,7 +103,7 @@
   </div>
 
   <div id="result"
-       class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
+       class="border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
 </div>
 
@@ -107,13 +115,15 @@
 
   let fullMarkdown = '';
 
-  // Настройка marked: включаем GFM (GitHub Flavored Markdown), включая таблицы
+  // Включаем поддержку таблиц, переносов и подсветки
   marked.setOptions({
-    gfm: true,
-    breaks: true,
-    highlight: (code, lang) => {
-      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-      return hljs.highlight(code, { language }).value;
+    gfm: true,          // поддержка GitHub Flavored Markdown (включая таблицы)
+    breaks: true,       // автоматические <br> вместо двух пробелов
+    highlight: function(code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
     }
   });
 
@@ -121,17 +131,22 @@
     const file = input.files[0];
     if (!file) return;
 
+    // Сброс
     result.innerHTML = '';
     fullMarkdown = '';
     result.classList.remove('hidden');
     dBtn.classList.add('hidden');
 
-    const body = new FormData();
-    body.append('pdf', file);
+    const formData = new FormData();
+    formData.append('pdf', file);
 
     try {
-      const res = await fetch('/generate', { method: 'POST', body });
-      if (!res.body) throw new Error('No stream returned');
+      const res = await fetch('/generate', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.body) throw new Error('Нет потока данных');
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
@@ -148,9 +163,11 @@
             try {
               const text = JSON.parse(line.slice(6));
               fullMarkdown += text;
+
+              // Парсим Markdown → HTML
               result.innerHTML = marked.parse(fullMarkdown);
 
-              // Подсветка синтаксиса
+              // Подсветка кода
               document.querySelectorAll('#result pre code').forEach((block) => {
                 hljs.highlightElement(block);
               });
@@ -158,31 +175,33 @@
               // Прокрутка вниз
               result.scrollTop = result.scrollHeight;
             } catch (e) {
-              console.error('Error parsing SSE data:', e);
+              console.error('Ошибка при парсинге:', e);
             }
           }
         }
       }
 
+      // Показываем кнопку скачивания
       dBtn.classList.remove('hidden');
+
     } catch (error) {
-      result.innerHTML = `<p class="text-red-600">Ошибка: ${error.message}</p>`;
-      console.error(error);
+      result.innerHTML = `<p class="text-red-600 font-medium">Ошибка: ${error.message}</p>`;
     }
   });
 
-  // Обработчик скачивания PDF
+  // Скачивание PDF
   dBtn.addEventListener('click', async () => {
-    const res = await fetch('/download_pdf', {
+    const response = await fetch('/download_pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ markdown: fullMarkdown })
     });
-    const blob = await res.blob();
+
+    const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'algorithm.pdf';
+    a.download = 'алгоритм_лечения.pdf';
     a.click();
     URL.revokeObjectURL(url);
   });
