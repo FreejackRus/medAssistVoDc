@@ -10,29 +10,17 @@
         href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
-    /* цветовые акценты для Markdown */
-    #result h1, #result h2, #result h3, #result h4 {
-      @apply text-sky-700 font-bold mt-5 mb-2;
-    }
-    #result ul, #result ol {
-      @apply list-disc list-inside text-slate-800;
-    }
-    #result pre {
-      @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;
-    }
-    #result code {
-      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;
-    }
-    #result blockquote {
-      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600;
-    }
+    body{background:#f1f5f9;font-family:Inter,Arial,Helvetica,sans-serif;}
+    #result h1,#result h2,#result h3,#result h4{@apply text-sky-700 font-bold mt-5 mb-2;}
+    #result ul,#result ol{@apply list-disc list-inside text-slate-800;}
+    #result pre{@apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;}
+    #result code{@apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;}
+    #result blockquote{@apply border-l-4 border-sky-400 pl-4 italic text-slate-600;}
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
 
 <div class="max-w-4xl mx-auto py-12 px-4">
-
-  <!-- шапка -->
   <div class="text-center mb-10">
     <h1 class="text-5xl font-bold text-slate-900 mb-4">ИИ-ассистент эксперта</h1>
     <p class="text-slate-600 text-lg">
@@ -40,12 +28,11 @@
     </p>
   </div>
 
-  <!-- форма + кнопки -->
   <div class="flex justify-center items-center gap-4 mb-8">
     <form id="uploadForm">
-      <label class="cursor-pointer">
+      <label>
         <input type="file" name="pdf" accept=".pdf" required class="hidden">
-        <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
+        <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow cursor-pointer">
           Выбрать PDF
         </span>
       </label>
@@ -56,7 +43,6 @@
     </button>
   </div>
 
-  <!-- область вывода -->
   <div id="result"
        class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
@@ -69,8 +55,6 @@ const result = document.getElementById('result');
 const dBtn   = document.getElementById('downloadBtn');
 
 let fullMarkdown = '';
-
-// настройки Marked
 marked.setOptions({
   breaks: true,
   highlight: (code, lang) => {
@@ -112,7 +96,6 @@ form.addEventListener('change', async () => {
   dBtn.classList.remove('hidden');
 });
 
-// скачивание PDF
 dBtn.addEventListener('click', async () => {
   const res = await fetch('/download_pdf', {
     method: 'POST',

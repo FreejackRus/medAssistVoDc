@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 import markdown
+import json
+from typing import List, Dict
 import textwrap
 import weasyprint
 
@@ -124,3 +126,37 @@ async def download_pdf(request: dict) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=algorithm.pdf"},
     )
+
+
+@app.post("/generate_table")
+async def generate_table(pdf: UploadFile = File(...)):
+    """
+    Отдаёт поток JSON-строк вместо текста:
+    data: {"row":{"Параметр":"Значение","Доза":"500 мг"}}\n\n
+    """
+    tmp_dir = Path("tmp")
+    tmp_dir.mkdir(exist_ok=True)
+    pdf_path = tmp_dir / pdf.filename
+    with open(pdf_path, "wb") as f:
+        f.write(await pdf.read())
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(pdf_path)
+        )
+        if not sections:
+            yield f"data: {json.dumps({'error':'Не удалось прочитать PDF'})}\n\n"
+            return
+
+        # пример: превращаем текст в таблицу «ключ-значение»
+        buffer = []
+        for key, text in sections.items():
+            # упрощённо: каждая строка = пара «раздел - текст»
+            buffer.append({"Раздел": key, "Содержание": text[:200] + "…"})
+            yield f"data: {json.dumps({'row': buffer[-1]})}\n\n"
+
+        # финальный объект с полным набором для PDF
+        yield f"data: {json.dumps({'done': buffer})}\n\n"
+        pdf_path.unlink(missing_ok=True)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
