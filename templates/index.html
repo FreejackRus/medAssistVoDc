@@ -5,87 +5,82 @@
   <title>ИИ-ассистент эксперта</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Marked + Highlight -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
   <style>
-    /* фон-градиент с «шумом» */
-    body {
-      background:
-        radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%),
-        url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='turbulence' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='.15'/%3E%3C/svg%3E");
-      height: 100vh;
-      overflow: hidden;
-    }
-    .glow {
-      box-shadow: 0 0 20px rgba(255,255,255,.07);
-    }
+    /* базовые стили Markdown */
+    #result h1, #result h2, #result h3, #result h4 { @apply text-sky-700 font-bold mt-5 mb-2; }
+    #result ul { @apply list-disc list-inside text-slate-800; }
+    #result ol { @apply list-decimal list-inside text-slate-800; }
+    #result pre { @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3; }
+    #result code { @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600; }
+    #result blockquote { @apply border-l-4 border-sky-400 pl-4 italic text-slate-600; }
   </style>
 </head>
-<body class="flex items-center justify-center text-white/90 font-['Inter']">
+<body class="bg-slate-100 font-['Inter']">
 
-<!-- центральная карточка -->
-<div class="w-[1080px] h-[768px] relative">
-  <!-- декоративные «рамки» -->
-  <div class="absolute inset-0 -z-10">
-    <div class="absolute inset-[75px] rounded-full border border-white/5"></div>
-    <div class="absolute inset-[128px] rounded-full border border-white/[.04]"></div>
-    <div class="absolute inset-[182px] rounded-full border border-white/[.03]"></div>
-    <div class="absolute inset-[235px] rounded-full border border-white/[.02]"></div>
-    <div class="absolute inset-[288px] rounded-full border border-white/[.015]"></div>
-    <div class="absolute inset-[341px] rounded-full border border-white/[.01]"></div>
-    <div class="absolute inset-[395px] rounded-full border border-white/[.008]"></div>
-    <div class="absolute inset-[448px] rounded-full border border-white/[.006]"></div>
-    <div class="absolute inset-[501px] rounded-full border border-white/[.005]"></div>
-    <div class="absolute inset-[554px] rounded-full border border-white/[.004]"></div>
-    <div class="absolute inset-[607px] rounded-full border border-white/[.003]"></div>
-    <div class="absolute inset-[660px] rounded-full border border-white/[.002]"></div>
-  </div>
+<!-- контейнер по центру -->
+<div class="max-w-3xl mx-auto py-12 px-4">
 
-  <!-- контент -->
-  <div class="absolute inset-0 flex flex-col items-center justify-center gap-8">
-    <h1 class="text-7xl font-semibold text-center leading-tight">
-      ИИ-ассистент<br/>эксперта
-    </h1>
-    <p class="max-w-xl text-center text-white/70 text-lg leading-relaxed">
-      Искусственный интеллект помогает найти официальные клинические рекомендации Минздрава РФ
-      и интегрировать их в практическую деятельность врача
+  <!-- шапка -->
+  <div class="text-center mb-10">
+    <h1 class="text-5xl font-bold text-slate-900 mb-4">ИИ-ассистент эксперта</h1>
+    <p class="text-slate-600 text-lg">
+      Загрузите клиническую рекомендацию (PDF) и получите структурированный алгоритм в формате Markdown.
     </p>
-
-    <!-- кнопка выбора файла -->
-    <form id="uploadForm" class="mt-4">
-      <label class="w-48 h-12 flex items-center justify-center
-                   bg-gradient-to-br from-orange-100/80 via-violet-200/80 to-green-100/80
-                   rounded-full text-zinc-900 font-semibold cursor-pointer glow">
-        <input type="file" name="pdf" accept=".pdf" class="hidden" required>
-        Выбрать PDF
-      </label>
-    </form>
   </div>
-</div>
 
-<!-- область вывода стрима -->
-<div id="output"
-     class="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-5xl h-80
-            bg-black/20 backdrop-blur-md rounded-2xl border border-white/10
-            p-6 overflow-y-auto text-sm leading-relaxed hidden">
+  <!-- кнопка загрузки -->
+  <form id="uploadForm" class="text-center mb-8">
+    <label class="inline-block cursor-pointer">
+      <input type="file" name="pdf" accept=".pdf" required class="hidden">
+      <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow-md transition">
+        Выбрать PDF
+      </span>
+    </label>
+  </form>
+
+  <!-- область вывода -->
+  <div id="result"
+       class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
+  </div>
+
 </div>
 
 <script>
 const form   = document.getElementById('uploadForm');
 const input  = form.querySelector('input[type=file]');
-const output = document.getElementById('output');
+const result = document.getElementById('result');
 
+// настройки Marked
+marked.setOptions({
+  breaks: true,
+  highlight: function(code, lang) {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  }
+});
+
+// обработка загрузки
 form.addEventListener('change', async e => {
   const file = input.files[0];
   if (!file) return;
 
-  output.textContent = '';
-  output.classList.remove('hidden');
+  result.textContent = '';
+  result.classList.remove('hidden');
 
   const body = new FormData();
   body.append('pdf', file);
 
-  const res = await fetch('/generate', {method: 'POST', body});
+  const res = await fetch('/generate', { method: 'POST', body });
   const reader = res.body.getReader();
   const dec = new TextDecoder('utf-8');
+  let buffer = '';
+
   while (true) {
     const {done, value} = await reader.read();
     if (done) break;
@@ -93,8 +88,11 @@ form.addEventListener('change', async e => {
     for (const l of lines) {
       if (l.startsWith('data:')) {
         const txt = JSON.parse(l.slice(6));
-        output.insertAdjacentText('beforeend', txt);
-        output.scrollTop = output.scrollHeight;
+        buffer += txt;
+        result.innerHTML = marked.parse(buffer);
+        // подсветка кода
+        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        result.scrollTop = result.scrollHeight;
       }
     }
   }
