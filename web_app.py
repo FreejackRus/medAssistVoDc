@@ -33,6 +33,70 @@ class AsyncStreamWriter:
     def __enter__(self): return self
     def __exit__(self, *a): self.close()
 
+@app.post("/download_pdf")
+async def download_pdf(request: dict) -> Response:
+    """Принимает {markdown: '...'} -> PDF"""
+    md = request.get("markdown", "")
+    # 1. Markdown → HTML (с поддержкой таблиц)
+    html_body = markdown.markdown(
+        md,
+        extensions=["tables", "fenced_code", "nl2br"]
+    )
+    # 2. Обернём в полный HTML-документ
+    full_html = textwrap.dedent(
+        f"""
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Рекомендации</title>
+            <style>
+              body {{
+                font-family: "DejaVu Sans", Arial, Helvetica, sans-serif;
+                margin: 40px;
+                color: #111827;
+                line-height: 1.6;
+              }}
+              table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin-bottom: 1em;
+              }}
+              th, td {{
+                border: 1px solid #d1d5db;
+                padding: 8px 10px;
+                text-align: left;
+              }}
+              th {{
+                background: #f3f4f6;
+                font-weight: 700;
+              }}
+              pre {{
+                background: #f3f4f6;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 0.875em;
+                overflow-x: auto;
+              }}
+              code {{
+                background: #e5e7eb;
+                padding: 2px 5px;
+                border-radius: 4px;
+              }}
+            </style>
+          </head>
+          <body>
+            <h1>Клинические рекомендации</h1>
+            {html_body}
+          </body>
+        </html>
+        """
+    )
+    pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=algorithm.pdf"},
+    )
 
 @app.post("/generate")
 async def generate(pdf: UploadFile = File(...)):
