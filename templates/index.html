@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>Medical Assistant</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; height: 60vh; overflow-y: scroll; }
+  </style>
+</head>
+<body>
+  <h1>Клинический ассистент</h1>
+  <form id="form">
+    <input type="file" name="pdf" accept=".pdf" required>
+    <button type="submit">Сгенерировать</button>
+  </form>
+  <h3>Результат:</h3>
+  <div id="output"></div>
+
+<script>
+const form = document.getElementById('form');
+const out  = document.getElementById('output');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  out.textContent = '';
+  const body = new FormData(form);
+  const res  = await fetch('/generate', { method: 'POST', body });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const lines = decoder.decode(value).split('\n\n');
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const txt = JSON.parse(line.slice(6));
+        out.textContent += txt;
+        out.scrollTop = out.scrollHeight;
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
