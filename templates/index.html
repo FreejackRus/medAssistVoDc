@@ -3,94 +3,43 @@
 <head>
   <meta charset="utf-8"/>
   <title>ИИ-ассистент эксперта</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-
-  <!-- Tailwind CSS через CDN -->
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Поддержка Markdown с таблицами -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-  <!-- Подсветка синтаксиса -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
   <style>
-    body {
-      background-color: #f1f5f9;
-      font-family: 'Inter', Arial, sans-serif;
+    body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+    #result h2 {
+      @apply text-sky-700 font-semibold border-l-4 border-sky-400 pl-3 my-4;
     }
-
-    /* Стили для контента в #result */
-    #result {
-      line-height: 1.7;
-    }
-
-    #result h1, #result h2, #result h3, #result h4 {
-      @apply text-sky-700 font-bold mt-6 mb-3;
-    }
-
-    #result p {
-      @apply mb-3 text-slate-800 leading-relaxed;
-    }
-
-    #result ul, #result ol {
-      @apply list-disc list-inside mb-4 ml-5 text-slate-800;
-    }
-
-    #result pre {
-      @apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;
-    }
-
-    #result code {
-      @apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600 font-mono;
-    }
-
-    #result blockquote {
-      @apply border-l-4 border-sky-400 pl-4 italic text-slate-600 bg-sky-50 p-2 rounded-r-md my-3;
-    }
-
-    /* СТИЛИ ДЛЯ ТАБЛИЦ — ВАЖНО */
     #result table {
       @apply w-full border-collapse my-4;
     }
-
     #result th, #result td {
-      @apply border border-slate-300 px-4 py-3 text-left align-top;
+      @apply border border-slate-300 px-4 py-2;
     }
-
     #result th {
-      @apply bg-slate-100 font-semibold text-slate-800;
+      @apply bg-slate-100 font-medium;
     }
-
     #result tr:nth-child(even) {
       @apply bg-slate-50;
     }
-
-    #result tr:hover {
-      @apply bg-slate-100;
-    }
-
-    /* Для корректного отображения переносов строк в ячейках */
-    #result td p, #result th p {
-      @apply m-0;
+    #result pre {
+      @apply bg-slate-100 p-3 rounded-md overflow-x-auto my-2;
     }
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
-
 <div class="max-w-4xl mx-auto py-12 px-4">
   <div class="text-center mb-10">
     <h1 class="text-5xl font-bold text-slate-900 mb-4">ИИ-ассистент эксперта</h1>
     <p class="text-slate-600 text-lg">
-      Загрузите клиническую рекомендацию (PDF) и получите структурированный алгоритм в формате Markdown.
+      Загрузите PDF и получите структурированный алгоритм.
     </p>
   </div>
 
   <div class="flex justify-center items-center gap-4 mb-8">
     <form id="uploadForm">
       <label>
-        <input type="file" name="pdf" accept=".pdf" required class="hidden">
+        <input type="file" name="pdf" accept=".pdf" required class="hidden"/>
         <span class="bg-sky-600 hover:bg-sky-700 text-white font-semibold px-6 py-3 rounded-lg shadow cursor-pointer">
           Выбрать PDF
         </span>
@@ -113,99 +62,85 @@
   const result = document.getElementById('result');
   const dBtn = document.getElementById('downloadBtn');
 
-  let fullMarkdown = '';
-
-  // Включаем поддержку таблиц, переносов и подсветки
-  marked.setOptions({
-    gfm: true,          // поддержка GitHub Flavored Markdown (включая таблицы)
-    breaks: true,       // автоматические <br> вместо двух пробелов
-    highlight: function(code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    }
-  });
+  let sections = []; // Структурированные данные
+  let currentSection = null;
 
   form.addEventListener('change', async () => {
     const file = input.files[0];
     if (!file) return;
 
-    // Сброс
-    result.innerHTML = '';
-    fullMarkdown = '';
+    result.innerHTML = '<p class="text-slate-600">Обработка...</p>';
     result.classList.remove('hidden');
     dBtn.classList.add('hidden');
+    sections = [];
+    currentSection = null;
 
     const formData = new FormData();
     formData.append('pdf', file);
 
     try {
-      const res = await fetch('/generate', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!res.body) throw new Error('Нет потока данных');
-
+      const res = await fetch('/generate', { method: 'POST', body: formData });
       const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
+      const decoder = new TextDecoder();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value);
         const lines = chunk.split('\n\n');
-
         for (const line of lines) {
           if (line.startsWith('data:')) {
             try {
-              const text = JSON.parse(line.slice(6));
-              fullMarkdown += text;
-
-              // Парсим Markdown → HTML
-              result.innerHTML = marked.parse(fullMarkdown);
-
-              // Подсветка кода
-              document.querySelectorAll('#result pre code').forEach((block) => {
-                hljs.highlightElement(block);
-              });
-
-              // Прокрутка вниз
-              result.scrollTop = result.scrollHeight;
+              const data = JSON.parse(line.slice(5));
+              if (data.type === 'text') {
+                // Здесь вы можете парсить текст и выделять разделы
+                // Пример: если строка начинается с "I.", "II.", "###", и т.д.
+                if (data.content.trim().startsWith("**") && data.content.includes("** |")) {
+                  // Это таблица — можно вставить как есть
+                  result.innerHTML += `<div>${data.content}</div>`;
+                } else if (data.content.trim().match(/^[IVX]+\./)) {
+                  // Новый раздел
+                  currentSection = { title: data.content.trim(), content: "" };
+                  sections.push(currentSection);
+                  result.innerHTML += `<h2>${data.content}</h2>`;
+                } else {
+                  // Контент
+                  if (currentSection) {
+                    currentSection.content += data.content + "\n";
+                  }
+                  result.innerHTML += `<p>${data.content}</p>`;
+                }
+              } else if (data.type === 'error') {
+                result.innerHTML = `<p class="text-red-600">${data.content}</p>`;
+              }
             } catch (e) {
-              console.error('Ошибка при парсинге:', e);
+              console.error(e);
             }
           }
         }
       }
 
-      // Показываем кнопку скачивания
       dBtn.classList.remove('hidden');
-
     } catch (error) {
-      result.innerHTML = `<p class="text-red-600 font-medium">Ошибка: ${error.message}</p>`;
+      result.innerHTML = `<p class="text-red-600">Ошибка: ${error.message}</p>`;
     }
   });
 
-  // Скачивание PDF
   dBtn.addEventListener('click', async () => {
-    const response = await fetch('/download_pdf', {
+    const res = await fetch('/download_pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ markdown: fullMarkdown })
+      body: JSON.stringify({ sections })
     });
-
-    const blob = await response.blob();
+    const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'алгоритм_лечения.pdf';
+    a.download = 'рекомендации.pdf';
     a.click();
     URL.revokeObjectURL(url);
   });
 </script>
-
 </body>
 </html>
