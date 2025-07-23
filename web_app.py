@@ -3,8 +3,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 
 from bot import MedicalAssistant
 
