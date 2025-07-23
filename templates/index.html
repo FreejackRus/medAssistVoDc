@@ -2,41 +2,99 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"/>
-  <title>Medical Assistant</title>
+  <title>ИИ-ассистент эксперта</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; }
-    #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; height: 60vh; overflow-y: scroll; }
+    /* фон-градиент с «шумом» */
+    body {
+      background:
+        radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%),
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='turbulence' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='.15'/%3E%3C/svg%3E");
+      height: 100vh;
+      overflow: hidden;
+    }
+    .glow {
+      box-shadow: 0 0 20px rgba(255,255,255,.07);
+    }
   </style>
 </head>
-<body>
-  <h1>Клинический ассистент</h1>
-  <form id="form">
-    <input type="file" name="pdf" accept=".pdf" required>
-    <button type="submit">Сгенерировать</button>
-  </form>
-  <h3>Результат:</h3>
-  <div id="output"></div>
+<body class="flex items-center justify-center text-white/90 font-['Inter']">
+
+<!-- центральная карточка -->
+<div class="w-[1080px] h-[768px] relative">
+  <!-- декоративные «рамки» -->
+  <div class="absolute inset-0 -z-10">
+    <div class="absolute inset-[75px] rounded-full border border-white/5"></div>
+    <div class="absolute inset-[128px] rounded-full border border-white/[.04]"></div>
+    <div class="absolute inset-[182px] rounded-full border border-white/[.03]"></div>
+    <div class="absolute inset-[235px] rounded-full border border-white/[.02]"></div>
+    <div class="absolute inset-[288px] rounded-full border border-white/[.015]"></div>
+    <div class="absolute inset-[341px] rounded-full border border-white/[.01]"></div>
+    <div class="absolute inset-[395px] rounded-full border border-white/[.008]"></div>
+    <div class="absolute inset-[448px] rounded-full border border-white/[.006]"></div>
+    <div class="absolute inset-[501px] rounded-full border border-white/[.005]"></div>
+    <div class="absolute inset-[554px] rounded-full border border-white/[.004]"></div>
+    <div class="absolute inset-[607px] rounded-full border border-white/[.003]"></div>
+    <div class="absolute inset-[660px] rounded-full border border-white/[.002]"></div>
+  </div>
+
+  <!-- контент -->
+  <div class="absolute inset-0 flex flex-col items-center justify-center gap-8">
+    <h1 class="text-7xl font-semibold text-center leading-tight">
+      ИИ-ассистент<br/>эксперта
+    </h1>
+    <p class="max-w-xl text-center text-white/70 text-lg leading-relaxed">
+      Искусственный интеллект помогает найти официальные клинические рекомендации Минздрава РФ
+      и интегрировать их в практическую деятельность врача
+    </p>
+
+    <!-- кнопка выбора файла -->
+    <form id="uploadForm" class="mt-4">
+      <label class="w-48 h-12 flex items-center justify-center
+                   bg-gradient-to-br from-orange-100/80 via-violet-200/80 to-green-100/80
+                   rounded-full text-zinc-900 font-semibold cursor-pointer glow">
+        <input type="file" name="pdf" accept=".pdf" class="hidden" required>
+        Выбрать PDF
+      </label>
+    </form>
+  </div>
+</div>
+
+<!-- область вывода стрима -->
+<div id="output"
+     class="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-5xl h-80
+            bg-black/20 backdrop-blur-md rounded-2xl border border-white/10
+            p-6 overflow-y-auto text-sm leading-relaxed hidden">
+</div>
 
 <script>
-const form = document.getElementById('form');
-const out  = document.getElementById('output');
+const form   = document.getElementById('uploadForm');
+const input  = form.querySelector('input[type=file]');
+const output = document.getElementById('output');
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  out.textContent = '';
-  const body = new FormData(form);
-  const res  = await fetch('/generate', { method: 'POST', body });
+form.addEventListener('change', async e => {
+  const file = input.files[0];
+  if (!file) return;
+
+  output.textContent = '';
+  output.classList.remove('hidden');
+
+  const body = new FormData();
+  body.append('pdf', file);
+
+  const res = await fetch('/generate', {method: 'POST', body});
   const reader = res.body.getReader();
-  const decoder = new TextDecoder('utf-8');
+  const dec = new TextDecoder('utf-8');
   while (true) {
-    const { done, value } = await reader.read();
+    const {done, value} = await reader.read();
     if (done) break;
-    const lines = decoder.decode(value).split('\n\n');
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const txt = JSON.parse(line.slice(6));
-        out.textContent += txt;
-        out.scrollTop = out.scrollHeight;
+    const lines = dec.decode(value).split('\n\n');
+    for (const l of lines) {
+      if (l.startsWith('data:')) {
+        const txt = JSON.parse(l.slice(6));
+        output.insertAdjacentText('beforeend', txt);
+        output.scrollTop = output.scrollHeight;
       }
     }
   }
