@@ -1,18 +1,21 @@
-import os
+# web_app.py
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from bot import MedicalAssistant   # импортируем ваш существующий класс
+
+# импортируем ваш существующий класс
+from bot import MedicalAssistant
 
 app = FastAPI(title="Medical Assistant Web")
 templates = Jinja2Templates(directory="templates")
 
-# создаём один глобальный инстанс (индекс услуг прогрузится один раз)
+# создаём один глобальный инстанс (индекс услуг загрузится один раз)
 assistant = MedicalAssistant()
 
 
@@ -21,71 +24,73 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+# ------------------------------------------------------------------
+# ВСПОМОГАТЕЛЬНЫЙ КЛАСС-«ФАЙЛ» ДЛЯ ПОТОКА
+# ------------------------------------------------------------------
+class AsyncStreamWriter:
+    """Пишет в asyncio.Queue, чтобы можно было асинхронно читать поток."""
+    def __init__(self, queue: asyncio.Queue[str]) -> None:
+        self.queue = queue
+        self._closed = False
+
+    def write(self, text: str) -> None:
+        if not self._closed:
+            self.queue.put_nowait(text)
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self._closed = True
+        self.queue.put_nowait("")  # маркер EOF
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+# ------------------------------------------------------------------
+# SSE-ЭНДПОИНТ
+# ------------------------------------------------------------------
 @app.post("/generate")
 async def generate(pdf: UploadFile = File(...)):
-    """SSE-эндпоинт, который стримит токены клиенту."""
-    pdf_path = Path("tmp") / pdf.filename
-    pdf_path.parent.mkdir(exist_ok=True)
+    """Получаем PDF и стримим результат в браузер (SSE)."""
+    # 1. Сохраняем временный PDF
+    tmp_dir = Path("tmp")
+    tmp_dir.mkdir(exist_ok=True)
+    pdf_path = tmp_dir / pdf.filename
     with open(pdf_path, "wb") as f:
         f.write(await pdf.read())
 
-    # Парсим PDF и получаем sections
-    sections = assistant.load_guidelines(str(pdf_path))
-    if not sections:
-        async def _empty():
-            yield f"data: Ошибка: не удалось прочитать PDF\n\n"
-        return StreamingResponse(_empty(), media_type="text/event-stream")
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # 2. Парсим PDF в треде
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(pdf_path)
+        )
+        if not sections:
+            yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
+            return
 
-        async def event_stream() -> AsyncGenerator[str, None]:
-            """
-            Генерируем SSE-чанки прямо из stdout _generate_streaming
-            без промежуточного файла, используя asyncio pipe.
-            """
-            import subprocess
-            import sys
-            from pathlib import Path
+        # 3. Очередь для потоковой передачи
+        q: asyncio.Queue[str] = asyncio.Queue()
+        writer = AsyncStreamWriter(q)
 
-            pdf_path_str = str(pdf_path)
+        # 4. Запускаем тяжёлый sync-код в треде
+        loop = asyncio.get_running_loop()
+        task = loop.run_in_executor(
+            None, assistant._generate_streaming, sections, writer
+        )
 
-            # 1. Парсим PDF
-            sections = await asyncio.get_running_loop().run_in_executor(
-                None, assistant.load_guidelines, pdf_path_str
-            )
-            if not sections:
-                yield f"data: Ошибка: не удалось прочитать PDF\n\n"
-                return
+        # 5. Отдаём клиенту
+        while True:
+            chunk = await q.get()
+            if chunk == "":          # конец потока
+                break
+            yield f"data: {json.dumps(chunk)}\n\n"
 
-            # 2. Запускаем _generate_streaming в отдельном процессе и читаем stdout
-            cmd = [
-                sys.executable,
-                "-c",
-                f"""
-    import sys
-    sys.path.insert(0, '{Path(__file__).parent}')
-    from bot import MedicalAssistant
-    import os
-    import tempfile
-    import json
+        await task
+        pdf_path.unlink(missing_ok=True)
 
-    assistant = MedicalAssistant()
-    sections = assistant.load_guidelines('{pdf_path_str}')
-    services = assistant.find_services(assistant.diagnosis_name)
-
-    # Пишем в stdout, который мы перехватим
-    assistant._generate_streaming(sections, sys.stdout)
-    """
-            ]
-
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-
-            # Потоковая отдача клиенту
-            async for line in proc.stdout:
-                text = line.decode("utf-8", errors="ignore")
-                yield f"data: {json.dumps(text)}\n\n"
-
-            await proc.wait()
-            pdf_path.unlink(missing_ok=True)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
