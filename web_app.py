@@ -36,31 +36,56 @@ async def generate(pdf: UploadFile = File(...)):
             yield f"data: Ошибка: не удалось прочитать PDF\n\n"
         return StreamingResponse(_empty(), media_type="text/event-stream")
 
-    async def event_stream() -> AsyncGenerator[str, None]:
-        # Создаём временный файл, куда будет писать _generate_streaming
-        tmp_out = Path("tmp") / "stream.txt"
-        loop = asyncio.get_running_loop()
+        async def event_stream() -> AsyncGenerator[str, None]:
+            """
+            Генерируем SSE-чанки прямо из stdout _generate_streaming
+            без промежуточного файла, используя asyncio pipe.
+            """
+            import subprocess
+            import sys
+            from pathlib import Path
 
-        def _sync_writer():
-            with open(tmp_out, "w", encoding="utf-8") as f:
-                # Ваш метод пишет в файл построчно
-                assistant._generate_streaming(sections, f)
+            pdf_path_str = str(pdf_path)
 
-        # Запускаем тяжёлый sync-код в треде
-        task = loop.run_in_executor(None, _sync_writer)
+            # 1. Парсим PDF
+            sections = await asyncio.get_running_loop().run_in_executor(
+                None, assistant.load_guidelines, pdf_path_str
+            )
+            if not sections:
+                yield f"data: Ошибка: не удалось прочитать PDF\n\n"
+                return
 
-        # Пока файл растёт, читаем его построчно и отправляем клиенту
-        with open(tmp_out, "r", encoding="utf-8") as f:
-            while not task.done() or f.readline():
-                line = f.readline()
-                if line:
-                    # SSE требует префикс "data: " и суффикс "\n\n"
-                    yield f"data: {json.dumps(line)}\n\n"
-                else:
-                    await asyncio.sleep(0.1)
+            # 2. Запускаем _generate_streaming в отдельном процессе и читаем stdout
+            cmd = [
+                sys.executable,
+                "-c",
+                f"""
+    import sys
+    sys.path.insert(0, '{Path(__file__).parent}')
+    from bot import MedicalAssistant
+    import os
+    import tempfile
+    import json
 
-        # Удаляем временный PDF
-        pdf_path.unlink(missing_ok=True)
-        tmp_out.unlink(missing_ok=True)
+    assistant = MedicalAssistant()
+    sections = assistant.load_guidelines('{pdf_path_str}')
+    services = assistant.find_services(assistant.diagnosis_name)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    # Пишем в stdout, который мы перехватим
+    assistant._generate_streaming(sections, sys.stdout)
+    """
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+
+            # Потоковая отдача клиенту
+            async for line in proc.stdout:
+                text = line.decode("utf-8", errors="ignore")
+                yield f"data: {json.dumps(text)}\n\n"
+
+            await proc.wait()
+            pdf_path.unlink(missing_ok=True)
