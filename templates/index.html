@@ -48,6 +48,10 @@
   <div id="result"
        class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
+  <button id="downloadBtn"
+        class="hidden ml-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
+  Скачать PDF
+</button>
 
 </div>
 
@@ -97,6 +101,35 @@ form.addEventListener('change', async e => {
     }
   }
 });
+  et fullMarkdown = '';
+
+document.getElementById('downloadBtn').addEventListener('click', async () => {
+  const res = await fetch('/download_pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ markdown: fullMarkdown })
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'algorithm.pdf';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* при получении стрима накапливаем Markdown */
+let buffer = '';
+...
+buffer += txt;
+fullMarkdown = buffer;   // сохраняем
+result.innerHTML = marked.parse(buffer);
+...
+/* показываем кнопку после окончания стрима */
+reader.read().then(({done}) => {
+  if (done) document.getElementById('downloadBtn').classList.remove('hidden');
+});
 </script>
+
 </body>
 </html>

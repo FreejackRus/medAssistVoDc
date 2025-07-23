@@ -8,6 +8,8 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import Response
+import markdown, weasyprint, io, textwrap
 
 # импортируем ваш существующий класс
 from bot import MedicalAssistant
@@ -94,3 +96,31 @@ async def generate(pdf: UploadFile = File(...)):
         pdf_path.unlink(missing_ok=True)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+@app.post("/download_pdf")
+async def download_pdf(request: dict) -> Response:
+    """
+    Принимает { "markdown": "..." } -> возвращает PDF
+    """
+    md = request.get("markdown", "")
+    html_body = markdown.markdown(md, extensions=['tables', 'fenced_code'])
+    full_html = textwrap.dedent(f"""
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              body {{ font-family: "DejaVu Sans", sans-serif; margin: 40px; }}
+              h1,h2,h3 {{ color:#0c4a6e; }}
+              pre {{ background:#f7f7f7; padding:8px; border-radius:4px; }}
+              code {{ background:#efefef; padding:2px 4px; border-radius:2px; }}
+            </style>
+          </head>
+          <body>{html_body}</body>
+        </html>
+    """)
+    pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=algorithm.pdf"}
+    )
