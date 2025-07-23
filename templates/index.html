@@ -5,17 +5,26 @@
   <title>ИИ-ассистент эксперта</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     body{background:#f1f5f9;font-family:Inter,Arial,Helvetica,sans-serif;}
+    #result h1,#result h2,#result h3,#result h4{@apply text-sky-700 font-bold mt-5 mb-2;}
+    #result ul,#result ol{@apply list-disc list-inside text-slate-800;}
+    #result pre{@apply bg-slate-50 border border-slate-200 p-3 rounded-md overflow-x-auto my-3;}
+    #result code{@apply bg-slate-200 px-1.5 py-0.5 rounded text-sm text-rose-600;}
+    #result blockquote{@apply border-l-4 border-sky-400 pl-4 italic text-slate-600;}
   </style>
 </head>
 <body class="bg-slate-100 font-['Inter']">
 
-<div class="max-w-6xl mx-auto py-12 px-4">
+<div class="max-w-4xl mx-auto py-12 px-4">
   <div class="text-center mb-10">
     <h1 class="text-5xl font-bold text-slate-900 mb-4">ИИ-ассистент эксперта</h1>
     <p class="text-slate-600 text-lg">
-      Загрузите клиническую рекомендацию (PDF) и получите структурированную таблицу.
+      Загрузите клиническую рекомендацию (PDF) и получите структурированный алгоритм в формате Markdown.
     </p>
   </div>
 
@@ -29,51 +38,46 @@
       </label>
     </form>
     <button id="downloadBtn"
-            class="hidden ml-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
+            class="hidden bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
       Скачать PDF
     </button>
   </div>
 
-  <!-- контейнер таблицы -->
-  <div id="tableWrapper"
-       class="overflow-x-auto hidden">
-    <table class="min-w-full bg-white border border-slate-300 rounded-lg shadow">
-      <thead id="tableHead" class="bg-slate-100">
-        <!-- заголовки -->
-      </thead>
-      <tbody id="tableBody">
-        <!-- строки -->
-      </tbody>
-    </table>
+  <div id="result"
+       class="prose prose-slate max-w-none border border-slate-300 rounded-xl bg-white p-6 shadow-lg max-h-[65vh] overflow-y-auto hidden">
   </div>
 </div>
 
 <script>
-let tableData = []; // кеш для PDF
-
 const form   = document.getElementById('uploadForm');
 const input  = form.querySelector('input[type=file]');
+const result = document.getElementById('result');
 const dBtn   = document.getElementById('downloadBtn');
-const wrap   = document.getElementById('tableWrapper');
-const head   = document.getElementById('tableHead');
-const body   = document.getElementById('tableBody');
+
+let fullMarkdown = '';
+marked.setOptions({
+  breaks: true,
+  highlight: (code, lang) => {
+    const l = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, {language: l}).value;
+  }
+});
 
 form.addEventListener('change', async () => {
   const file = input.files[0];
   if (!file) return;
 
-  tableData = [];
-  head.innerHTML = '';
-  body.innerHTML = '';
-  wrap.classList.remove('hidden');
+  result.innerHTML = '';
+  fullMarkdown = '';
+  result.classList.remove('hidden');
   dBtn.classList.add('hidden');
 
-  const fd = new FormData();
-  fd.append('pdf', file);
+  const body = new FormData();
+  body.append('pdf', file);
 
-  const res = await fetch('/generate_table', {method:'POST', body:fd});
+  const res = await fetch('/generate', {method: 'POST', body});
   const reader = res.body.getReader();
-  const dec = new TextDecoder();
+  const dec = new TextDecoder('utf-8');
 
   while (true) {
     const {done, value} = await reader.read();
@@ -81,31 +85,22 @@ form.addEventListener('change', async () => {
     const lines = dec.decode(value).split('\n\n');
     for (const l of lines) {
       if (l.startsWith('data:')) {
-        const msg = JSON.parse(l.slice(6));
-        if (msg.error) { alert(msg.error); return; }
-        if (msg.done) { tableData = msg.done; dBtn.classList.remove('hidden'); continue; }
-        tableData.push(msg.row);
-        renderTable();
+        const txt = JSON.parse(l.slice(6));
+        fullMarkdown += txt;
+        result.innerHTML = marked.parse(fullMarkdown);
+        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        result.scrollTop = result.scrollHeight;
       }
     }
   }
+  dBtn.classList.remove('hidden');
 });
 
-function renderTable() {
-  if (!tableData.length) return;
-  const cols = Object.keys(tableData[0]);
-  head.innerHTML = '<tr>' + cols.map(c => `<th class="px-4 py-2 text-left">${c}</th>`).join('') + '</tr>';
-  body.innerHTML = tableData.map(row =>
-    '<tr>' + cols.map(c => `<td class="px-4 py-2 border-t">${row[c] || ''}</td>`).join('') + '</tr>'
-  ).join('');
-}
-
-// скачивание PDF таблицы
 dBtn.addEventListener('click', async () => {
-  const res = await fetch('/download_table_pdf', {
+  const res = await fetch('/download_pdf', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({rows: tableData})
+    body: JSON.stringify({markdown: fullMarkdown})
   });
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
