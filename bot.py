@@ -16,7 +16,7 @@ from langchain_community.vectorstores import FAISS
 import ollama  # pip install ollama
 
 # ------------------------- CONFIG -------------------------
-OLLAMA_MODEL: str = "hf.co/unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF:Q6_K"          # сначала «ollama pull <name>»
+OLLAMA_MODEL: str = "hf.co/unsloth/hf.co/unsloth/Qwen3-30B-A3B-GGUF:Q5_K_M"          # сначала «ollama pull <name>»
 EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
