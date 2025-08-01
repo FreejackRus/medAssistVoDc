@@ -35,7 +35,7 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #0ea5e9;
+      background-color: #94a3b8;
       animation: typing 1.4s infinite ease-in-out;
     }
 
@@ -43,8 +43,8 @@
     .typing-indicator:nth-child(2) { animation-delay: -0.16s; }
 
     @keyframes typing {
-      0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-      40% { transform: scale(1); opacity: 1; }
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
     }
 
     .fade-in {
@@ -221,6 +221,50 @@
       </svg>
       Копировать текст
     </button>
+    <button id="startDialogueBtn" class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold px-8 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105">
+      <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+      </svg>
+      Начать диалог
+    </button>
+  </div>
+
+  <!-- Диалоговое окно -->
+  <div id="dialogueContainer" class="hidden mt-8 glass-effect rounded-2xl p-6 shadow-xl fade-in">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Диалог с ИИ-ассистентом</h3>
+      <div class="flex items-center text-sm text-slate-600">
+        <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+        <span id="diagnosisName">Диагноз не определен</span>
+      </div>
+    </div>
+    
+    <!-- История чата -->
+    <div id="chatHistory" class="bg-slate-50 rounded-xl p-4 mb-4 max-h-96 overflow-y-auto">
+      <div class="text-center text-slate-500 text-sm">
+        Задайте вопрос по клиническим рекомендациям
+      </div>
+    </div>
+    
+    <!-- Поле ввода -->
+    <div class="flex gap-3">
+      <input 
+        type="text" 
+        id="messageInput" 
+        placeholder="Задайте вопрос по диагностике, лечению или другим аспектам..."
+        class="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+        disabled
+      >
+      <button 
+        id="sendMessageBtn" 
+        class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+        </svg>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -237,9 +281,17 @@
   const progressPercent = document.getElementById('progressPercent');
   const statusText = document.getElementById('statusText');
   const actionButtons = document.getElementById('actionButtons');
+  const startDialogueBtn = document.getElementById('startDialogueBtn');
+  const dialogueContainer = document.getElementById('dialogueContainer');
+  const chatHistory = document.getElementById('chatHistory');
+  const messageInput = document.getElementById('messageInput');
+  const sendMessageBtn = document.getElementById('sendMessageBtn');
+  const diagnosisName = document.getElementById('diagnosisName');
 
   let fullMarkdown = '';
   let progressValue = 0;
+  let currentSessionId = null;
+  let currentFile = null;
 
   // Настройка marked: включаем таблицы (gfm) и подсветку
   marked.setOptions({
@@ -275,6 +327,7 @@
 
   fileInput.addEventListener('change', (e) => {
     if (e.target.files[0]) {
+      currentFile = e.target.files[0];
       handleFileUpload(e.target.files[0]);
     }
   });
@@ -449,6 +502,333 @@
       alert('Ошибка копирования: ' + error.message);
     }
   });
+
+  // Диалоговая функциональность
+  startDialogueBtn.addEventListener('click', async () => {
+    if (!currentFile) {
+      alert('Сначала загрузите PDF файл');
+      return;
+    }
+
+    try {
+      startDialogueBtn.disabled = true;
+      startDialogueBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Инициализация...';
+
+      const formData = new FormData();
+      formData.append('pdf', currentFile);
+
+      const res = await fetch('/start_dialogue', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Ошибка инициализации диалога');
+      }
+
+      currentSessionId = data.session_id;
+      diagnosisName.textContent = data.diagnosis || 'Диагноз не определен';
+      
+      // Показываем диалоговое окно
+      dialogueContainer.classList.remove('hidden');
+      messageInput.disabled = false;
+      sendMessageBtn.disabled = false;
+      
+      // Добавляем приветственное сообщение
+      addMessageToChat('assistant', data.message);
+      
+      // Прокручиваем к диалогу
+      dialogueContainer.scrollIntoView({ behavior: 'smooth' });
+
+    } catch (error) {
+      alert('Ошибка инициализации диалога: ' + error.message);
+    } finally {
+      startDialogueBtn.disabled = false;
+      startDialogueBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>Начать диалог';
+    }
+  });
+
+  // Отправка сообщения
+  async function sendMessage() {
+    const message = messageInput.value.trim();
+    if (!message || !currentSessionId) return;
+
+    // Добавляем сообщение пользователя в чат
+    addMessageToChat('user', message);
+    messageInput.value = '';
+    messageInput.disabled = true;
+    sendMessageBtn.disabled = true;
+
+    // Добавляем индикатор печати
+    const typingId = addTypingIndicator();
+
+    try {
+      const res = await fetch('/dialogue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          message: message
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Ошибка отправки сообщения');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let assistantResponse = '';
+
+      // Удаляем индикатор печати и добавляем пустое сообщение ассистента
+      removeTypingIndicator(typingId);
+      const assistantMessageId = addMessageToChat('assistant', '');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const text = JSON.parse(line.slice(6));
+              assistantResponse += text;
+              updateMessageInChat(assistantMessageId, assistantResponse);
+            } catch (e) {
+              console.error('Ошибка парсинга:', e);
+            }
+          }
+        }
+      }
+
+    } catch (error) {
+      removeTypingIndicator(typingId);
+      addMessageToChat('assistant', '❌ Ошибка: ' + error.message);
+    } finally {
+      messageInput.disabled = false;
+      sendMessageBtn.disabled = false;
+      messageInput.focus();
+    }
+  }
+
+  sendMessageBtn.addEventListener('click', sendMessage);
+  messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Функции для работы с чатом
+  function addMessageToChat(role, content) {
+    const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const isUser = role === 'user';
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.id = messageId;
+    messageDiv.className = `mb-4 ${isUser ? 'text-right' : 'text-left'}`;
+    
+    const bubble = document.createElement('div');
+    bubble.className = `inline-block max-w-[80%] p-3 rounded-xl ${
+      isUser 
+        ? 'bg-purple-500 text-white' 
+        : 'bg-white border border-slate-200 text-slate-800'
+    }`;
+    
+    if (content) {
+      if (isUser) {
+        bubble.textContent = content;
+      } else {
+        bubble.innerHTML = marked.parse(content);
+      }
+    }
+    
+    messageDiv.appendChild(bubble);
+    
+    // Удаляем приветственное сообщение, если оно есть
+    const welcomeMsg = chatHistory.querySelector('.text-center');
+    if (welcomeMsg) {
+      welcomeMsg.remove();
+    }
+    
+    chatHistory.appendChild(messageDiv);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    
+    return messageId;
+  }
+
+  function updateMessageInChat(messageId, content) {
+    const messageDiv = document.getElementById(messageId);
+    if (messageDiv) {
+      const bubble = messageDiv.querySelector('div');
+      bubble.innerHTML = marked.parse(content);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+  }
+
+  function addTypingIndicator() {
+    const typingId = 'typing_' + Date.now();
+    const typingDiv = document.createElement('div');
+    typingDiv.id = typingId;
+    typingDiv.className = 'mb-4 text-left';
+    typingDiv.innerHTML = `
+      <div class="inline-block bg-white border border-slate-200 p-3 rounded-xl">
+        <div class="flex items-center space-x-1">
+          <div class="typing-indicator"></div>
+          <div class="typing-indicator"></div>
+          <div class="typing-indicator"></div>
+          <span class="ml-2 text-slate-500 text-sm">ИИ печатает...</span>
+        </div>
+      </div>
+    `;
+    
+    chatHistory.appendChild(typingDiv);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    
+    return typingId;
+  }
+
+  function removeTypingIndicator(typingId) {
+    const typingDiv = document.getElementById(typingId);
+    if (typingDiv) {
+      typingDiv.remove();
+    }
+  }
+
+  // Функциональность генерации услуг
+  function addServicesButtons() {
+    // Находим все заголовки разделов (h1, h2, h3)
+    const headers = result.querySelectorAll('h1, h2, h3, h4');
+    
+    headers.forEach((header, index) => {
+      // Пропускаем если кнопка уже добавлена
+      if (header.querySelector('.services-btn')) return;
+      
+      // Получаем текст следующего элемента (содержимое раздела)
+      let nextElement = header.nextElementSibling;
+      let sectionContent = '';
+      
+      // Собираем содержимое раздела до следующего заголовка
+      while (nextElement && !nextElement.matches('h1, h2, h3, h4')) {
+        sectionContent += nextElement.textContent || nextElement.innerText || '';
+        nextElement = nextElement.nextElementSibling;
+      }
+      
+      // Добавляем кнопку только если есть содержимое
+      if (sectionContent.trim().length > 50) {
+        const servicesBtn = document.createElement('button');
+        servicesBtn.className = 'services-btn ml-3 px-3 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors duration-200';
+        servicesBtn.innerHTML = '🏥 Услуги';
+        servicesBtn.title = 'Предложить услуги для этого этапа';
+        
+        servicesBtn.addEventListener('click', () => {
+          generateServicesForSection(header.textContent, sectionContent, servicesBtn);
+        });
+        
+        header.appendChild(servicesBtn);
+      }
+    });
+  }
+
+  // Генерация услуг для раздела
+  async function generateServicesForSection(stepTitle, stepContent, button) {
+    const originalText = button.innerHTML;
+    
+    try {
+      button.disabled = true;
+      button.innerHTML = '<svg class="w-3 h-3 inline animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>';
+      
+      const response = await fetch('/generate_services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step_title: stepTitle,
+          step_text: stepContent
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка генерации услуг');
+      }
+      
+      if (data.services && data.services.length > 0) {
+        showServicesModal(data.step_title, data.services);
+      } else {
+        alert('Не удалось сгенерировать услуги для данного этапа');
+      }
+      
+    } catch (error) {
+      console.error('Ошибка генерации услуг:', error);
+      alert('Ошибка генерации услуг: ' + error.message);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = originalText;
+    }
+  }
+
+  // Показ модального окна с услугами
+  function showServicesModal(stepTitle, services) {
+    // Создаем модальное окно
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+      <div class="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div class="p-6">
+          <div class="flex justify-between items-start mb-4">
+            <h3 class="text-xl font-bold text-slate-800">Рекомендуемые услуги</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+          </div>
+          <p class="text-sm text-slate-600 mb-4">Для этапа: <strong>${stepTitle}</strong></p>
+          
+          <div class="space-y-4">
+            ${services.map(service => `
+              <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                <h4 class="font-semibold text-slate-800 mb-2">${service.name}</h4>
+                <p class="text-slate-600 text-sm mb-2">${service.description}</p>
+                <div class="text-xs text-slate-500">
+                  <strong>Показания:</strong> ${service.indications}
+                </div>
+                <button class="mt-3 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded-lg transition-colors">
+                  📞 Записаться
+                </button>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="mt-6 text-center">
+            <button class="close-modal px-6 py-2 bg-slate-500 hover:bg-slate-600 text-white rounded-lg transition-colors">
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Добавляем обработчики закрытия
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.classList.contains('close-modal')) {
+        document.body.removeChild(modal);
+      }
+    });
+    
+    document.body.appendChild(modal);
+  }
+
+  // Добавляем кнопки услуг после генерации алгоритма
+  const originalHandleFileUpload = handleFileUpload;
+  handleFileUpload = async function(file) {
+    await originalHandleFileUpload.call(this, file);
+    
+    // Добавляем кнопки услуг после завершения генерации
+    setTimeout(() => {
+      if (fullMarkdown && fullMarkdown.length > 0) {
+        addServicesButtons();
+      }
+    }, 1500);
+  };
 </script>
 </body>
 </html>

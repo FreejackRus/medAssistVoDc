@@ -9,7 +9,12 @@ from typing import AsyncGenerator
 from urllib.parse import quote
 
 import markdown
-import weasyprint
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, Response, FileResponse
 
@@ -88,6 +93,158 @@ async def generate(pdf: UploadFile = File(...)) -> StreamingResponse:
         pdf_path.unlink(missing_ok=True)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ---------- DIALOGUE ----------
+# Глобальное хранилище для диалогов (в продакшене лучше использовать Redis или базу данных)
+dialogue_sessions = {}
+
+@app.post("/dialogue")
+async def dialogue(request: Request) -> StreamingResponse:
+    body = await request.json()
+    session_id = body.get("session_id", "default")
+    user_message = body.get("message", "").strip()
+    
+    if not user_message:
+        async def error_stream():
+            yield f"data: {json.dumps('❌ Пустое сообщение')}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+    
+    # Получаем или создаем сессию диалога
+    if session_id not in dialogue_sessions:
+        async def error_stream():
+            yield f"data: {json.dumps('❌ Сессия не найдена. Сначала загрузите PDF.')}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+    
+    session = dialogue_sessions[session_id]
+    sections = session["sections"]
+    conversation_history = session.get("history", [])
+    
+    async def dialogue_stream() -> AsyncGenerator[str, None]:
+        q = asyncio.Queue()
+        writer = AsyncStreamWriter(q)
+
+        # Запускаем генерацию диалога в фоне
+        loop = asyncio.get_running_loop()
+        task = loop.run_in_executor(
+            None, 
+            assistant._generate_dialogue_streaming, 
+            user_message, 
+            conversation_history, 
+            sections, 
+            writer
+        )
+
+        response_text = ""
+        while True:
+            try:
+                chunk = await q.get()
+                if chunk == "":
+                    break
+                response_text += chunk
+                # Отправляем как SSE
+                yield f"data: {json.dumps(chunk)}\n\n"
+            except Exception as e:
+                print("Error in dialogue stream:", e)
+                break
+
+        await task
+        
+        # Сохраняем историю диалога
+        conversation_history.append({"role": "user", "content": user_message})
+        conversation_history.append({"role": "assistant", "content": response_text})
+        
+        # Ограничиваем историю последними 10 сообщениями
+        if len(conversation_history) > 10:
+            conversation_history = conversation_history[-10:]
+        
+        session["history"] = conversation_history
+
+    return StreamingResponse(dialogue_stream(), media_type="text/event-stream")
+
+
+@app.post("/start_dialogue")
+async def start_dialogue(pdf: UploadFile = File(...)) -> Response:
+    """Инициализирует диалоговую сессию с загруженным PDF"""
+    tmp_dir = Path("tmp")
+    tmp_dir.mkdir(exist_ok=True, parents=True)
+    pdf_path = tmp_dir / pdf.filename
+    pdf_path.write_bytes(await pdf.read())
+
+    try:
+        # Загружаем структуру рекомендаций
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(pdf_path)
+        )
+        
+        if not sections:
+            return Response(
+                content=json.dumps({"error": "Не удалось прочитать PDF"}),
+                media_type="application/json",
+                status_code=400
+            )
+        
+        # Создаем новую сессию
+        session_id = f"session_{len(dialogue_sessions) + 1}"
+        dialogue_sessions[session_id] = {
+            "sections": sections,
+            "history": [],
+            "diagnosis": assistant.diagnosis_name
+        }
+        
+        return Response(
+            content=json.dumps({
+                "session_id": session_id,
+                "diagnosis": assistant.diagnosis_name,
+                "message": "Диалоговая сессия создана. Теперь вы можете задавать вопросы по клиническим рекомендациям."
+            }),
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": f"Ошибка обработки PDF: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
+    finally:
+        pdf_path.unlink(missing_ok=True)
+
+
+@app.post("/generate_services")
+async def generate_services(request: Request) -> Response:
+    """Генерирует предложения услуг для этапа алгоритма"""
+    body = await request.json()
+    step_text = body.get("step_text", "").strip()
+    step_title = body.get("step_title", "").strip()
+    
+    if not step_text:
+        return Response(
+            content=json.dumps({"error": "Не указан текст этапа"}),
+            media_type="application/json",
+            status_code=400
+        )
+    
+    try:
+        # Генерируем услуги через ИИ
+        services = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.generate_services_for_step, step_text, step_title
+        )
+        
+        return Response(
+            content=json.dumps({
+                "services": services,
+                "step_title": step_title
+            }),
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": f"Ошибка генерации услуг: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
 
 
 # ---------- PDF Generation ----------
@@ -203,8 +360,19 @@ async def download_pdf(request: Request) -> Response:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_path = tmp_file.name
             
-        # Генерируем PDF в файл
-        weasyprint.HTML(string=full_html).write_pdf(tmp_path)
+        # Генерируем PDF с помощью ReportLab
+        doc = SimpleDocTemplate(tmp_path, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Простое преобразование HTML в PDF
+        lines = html_body.split('\n')
+        for line in lines:
+            if line.strip():
+                story.append(Paragraph(line, styles['Normal']))
+                story.append(Spacer(1, 12))
+        
+        doc.build(story)
         
         # Проверяем размер файла
         file_size = os.path.getsize(tmp_path)

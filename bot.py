@@ -6,23 +6,17 @@ import re
 from pathlib import Path
 from typing import Dict, List, TextIO
 import fitz
-import pandas as pd
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 import ollama  # pip install ollama
 
-# ------------------------- CONFIG -------------------------
-OLLAMA_MODEL: str = "hf.co/unsloth/Magistral-Small-2506-GGUF:Q6_K"          # сначала «ollama pull <name>»
-EMBED_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-SERVICES_FILE: Path = Path("docs/services.xlsx")
+# ---------- CONSTANTS ----------
+OLLAMA_MODEL: str = "hf.co/unsloth/Magistral-Small-2506-GGUF:Q6_K"          # сначала «ollama pull <n>»
+# SERVICES_FILE: Path = Path("docs/services.xlsx")  # Не используется, услуги генерируются через ИИ
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
-TOP_K: int = 50
-MAX_INPUT_TOK: int = 128_000
+MAX_INPUT_TOK: int = 8_000
 # Улучшенные паттерны для распознавания структуры
 SECTION_PATTERNS = [
     re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
@@ -50,51 +44,15 @@ DIAGNOSIS_PATTERNS = [
 
 class MedicalAssistant:
     def __init__(self) -> None:
-        self.embeddings = self._lazy_embedder()
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
             chunk_overlap=CHUNK_OVERLAP,
         )
-        self.db = self._load_or_build_index()
+        # Убираем индексацию услуг, так как они генерируются через ИИ
+        # self.embeddings = self._lazy_embedder()
+        # self.db = self._load_or_build_index()
 
-    # ---------- EMBEDDER ----------
-    def _lazy_embedder(self):
-        return HuggingFaceEmbeddings(
-            model_name=EMBED_MODEL,
-            model_kwargs={"device": "cpu"},  # можно "cuda", если есть
-            encode_kwargs={"normalize_embeddings": True},
-            cache_folder=".embed_cache",
-        )
 
-    # ---------- INDEX ----------
-    def _load_or_build_index(self) -> FAISS:
-        idx_path = SERVICES_FILE.with_suffix(".faiss")
-        if idx_path.exists():
-            print("📁 Loading cached FAISS index …")
-            return FAISS.load_local(
-                str(idx_path.parent),
-                self.embeddings,
-                index_name=idx_path.stem,
-                allow_dangerous_deserialization=True,
-            )
-
-        print("🔄 Building index from", SERVICES_FILE)
-        df = pd.read_excel(SERVICES_FILE)
-        docs = [
-            Document(
-                page_content=f"Услуга {row['ID']}: {row['Название']}",
-                metadata={
-                    "source": "services",
-                    "id": str(row["ID"]),
-                    "name": str(row["Название"]),
-                },
-            )
-            for _, row in df.iterrows()
-        ]
-        db = FAISS.from_documents(docs, self.embeddings)
-        db.save_local(str(idx_path.parent), idx_path.stem)
-        print("✅ Index saved to disk")
-        return db
 
     # ---------- PDF PROCESSING ----------
     def _extract_text_with_fallback(self, pdf_path: str) -> str:
@@ -413,21 +371,8 @@ class MedicalAssistant:
             else text
         )
 
-    def find_services(self, query: str, k: int = TOP_K) -> List[Document]:
-        hits = self.db.similarity_search(query[:300], k=k, fetch_k=k * 3)
-        seen, unique = set(), []
-        for doc in hits:
-            if doc.metadata["id"] not in seen:
-                seen.add(doc.metadata["id"])
-                unique.append(doc)
-        return unique
-
     # ---------- GENERATE ----------
     def _generate_streaming(self, sections: Dict[str, str], file: TextIO) -> None:
-        services = self.find_services(self.diagnosis_name)
-        services_list = "\n".join(
-            f"- ID {d.metadata['id']}: {d.metadata['name']}" for d in services
-        )
 
 
         content = sections.get("guidelines", "")
@@ -492,6 +437,129 @@ class MedicalAssistant:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+        try:
+            stream = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=messages,
+                stream=True,
+                options={
+                    "temperature": 0.6, 
+                    "top_p": 0.95,
+                    "num_predict": -1,
+                    "stop": ["<|im_end|>", "</s>"],
+                    "system": "Отвечай только на русском языке!"
+                }
+            )
+            for chunk in stream:
+                token = chunk["message"]["content"]
+                file.write(token)
+                print(token, end="", flush=True)
+        except Exception as e:
+            print("\n❌ Ошибка при вызове Ollama:", e)
+
+    # ---------- SERVICES GENERATION ----------
+    def generate_services_for_step(self, step_text: str, step_title: str = "") -> List[Dict[str, str]]:
+        """Генерирует предложения услуг для конкретного этапа алгоритма"""
+        
+        system_prompt = """Ты — медицинский ассистент, который предлагает конкретные медицинские услуги для записи.
+
+На основе описания этапа медицинского алгоритма предложи 3-5 конкретных услуг, на которые пациент может записаться.
+
+Для каждой услуги укажи:
+- Название услуги (краткое и понятное)
+- Описание (что включает услуга)
+- Когда нужна (показания)
+
+Отвечай ТОЛЬКО в формате JSON массива:
+[
+  {
+    "name": "Название услуги",
+    "description": "Подробное описание услуги",
+    "indications": "Когда нужна эта услуга"
+  }
+]
+
+Предлагай только реальные медицинские услуги: консультации, анализы, исследования, процедуры."""
+
+        user_prompt = f"""Этап алгоритма: {step_title}
+
+Описание этапа:
+{step_text}
+
+Предложи услуги для этого этапа."""
+
+        try:
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                options={
+                    "temperature": 0.3,
+                    "top_p": 0.9,
+                    "num_predict": 1000
+                }
+            )
+            
+            response_text = response["message"]["content"].strip()
+            
+            # Пытаемся извлечь JSON из ответа
+            import json
+            import re
+            
+            # Ищем JSON массив в ответе
+            json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    services = json.loads(json_match.group())
+                    return services if isinstance(services, list) else []
+                except json.JSONDecodeError:
+                    pass
+            
+            # Если JSON не найден, возвращаем пустой список
+            return []
+            
+        except Exception as e:
+            print(f"Ошибка генерации услуг: {e}")
+            return []
+
+    # ---------- DIALOGUE ----------
+    def _generate_dialogue_streaming(self, user_message: str, conversation_history: List[Dict], sections: Dict[str, str], file: TextIO) -> None:
+        """Генерирует ответ в диалоговом режиме с учетом истории разговора"""
+        content = sections.get("guidelines", "")
+        content = self._trim_tokens(content, MAX_INPUT_TOK)
+
+        system_prompt = (
+            "Ты — русскоязычный медицинский ассистент в диалоговом режиме. "
+            "ВАЖНО: Отвечай ТОЛЬКО на русском языке! "
+            "Твой единственный источник информации — клинические рекомендации от пользователя. "
+            "Отвечай на вопросы пользователя, основываясь ТОЛЬКО на предоставленных клинических рекомендациях. "
+            "Если информации нет в рекомендациях, честно скажи об этом. "
+            "Будь точным, включай конкретные числа, дозы, препараты, сроки из документа. "
+            "Поддерживай диалог, отвечай на уточняющие вопросы. "
+            "Весь ответ должен быть написан на русском языке!"
+        )
+
+        # Формируем сообщения с историей диалога
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Добавляем контекст клинических рекомендаций
+        context_message = f"""
+        Диагноз: {self.diagnosis_name}
+        
+        Клинические рекомендации:
+        {content}
+        """
+        messages.append({"role": "system", "content": context_message})
+        
+        # Добавляем историю разговора
+        for msg in conversation_history:
+            messages.append(msg)
+        
+        # Добавляем текущий вопрос пользователя
+        messages.append({"role": "user", "content": user_message})
 
         try:
             stream = ollama.chat(
