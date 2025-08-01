@@ -22,11 +22,28 @@ SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 TOP_K: int = 50
-MAX_INPUT_TOK: int = 135_000
-SECTION_PATTERN = re.compile(
-    r"^(\d+(?:\.\d+)*)\s+([^\n]+)",  # 1.1, 2.3.4, … + title
-    re.MULTILINE,
-)
+MAX_INPUT_TOK: int = 128_000
+# Улучшенные паттерны для распознавания структуры
+SECTION_PATTERNS = [
+    re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
+    re.compile(r"^([IVX]+)\.\s+([^\n]+)", re.MULTILINE),       # I., II., III. + title
+    re.compile(r"^([А-Я][а-я]+)\s*\n", re.MULTILINE),         # Заголовки с большой буквы
+    re.compile(r"^(\d+)\.\s+([А-ЯЁ][^\n]+)", re.MULTILINE),   # 1. Заголовок
+    re.compile(r"^([А-ЯЁ\s]{3,})\n", re.MULTILINE),           # ЗАГОЛОВКИ ЗАГЛАВНЫМИ
+]
+
+# Паттерны для извлечения названия диагноза
+DIAGNOSIS_PATTERNS = [
+    re.compile(r"(Сахарный диабет[^\n]*)", re.I),
+    re.compile(r"(Гипертония[^\n]*)", re.I),
+    re.compile(r"(Астма[^\n]*)", re.I),
+    re.compile(r"(Артериальная гипертензия[^\n]*)", re.I),
+    re.compile(r"(Ишемическая болезнь сердца[^\n]*)", re.I),
+    re.compile(r"(Хроническая обструктивная болезнь легких[^\n]*)", re.I),
+    re.compile(r"(Пневмония[^\n]*)", re.I),
+    re.compile(r"(Инфаркт миокарда[^\n]*)", re.I),
+    re.compile(r"(Клинические рекомендации[^\n]*)", re.I),
+]
 # ----------------------------------------------------------
 
 
@@ -78,7 +95,124 @@ class MedicalAssistant:
         print("✅ Index saved to disk")
         return db
 
-    # ---------- PDF ----------
+    # ---------- PDF PROCESSING ----------
+    def _extract_text_with_fallback(self, pdf_path: str) -> str:
+        """Извлекает текст из PDF с несколькими методами"""
+        try:
+            # Метод 1: PyMuPDF (fitz)
+            doc = fitz.open(pdf_path)
+            text_parts = []
+            
+            for page_num, page in enumerate(doc):
+                try:
+                    # Пробуем извлечь текст
+                    text = page.get_text("text")
+                    
+                    # Если текста мало, возможно это отсканированный документ
+                    if len(text.strip()) < 100:
+                        print(f"Страница {page_num + 1}: мало текста, возможно отсканированный документ")
+                        # Здесь можно добавить OCR, если нужно
+                        # text = self._ocr_page(page)
+                    
+                    text_parts.append(text)
+                    
+                except Exception as e:
+                    print(f"Ошибка обработки страницы {page_num + 1}: {e}")
+                    continue
+            
+            doc.close()
+            full_text = "\n".join(text_parts)
+            
+            if len(full_text.strip()) < 500:
+                print("Извлечено мало текста, пробуем альтернативный метод")
+                return self._extract_with_langchain(pdf_path)
+                
+            return full_text
+            
+        except Exception as e:
+            print(f"Ошибка PyMuPDF: {e}")
+            return self._extract_with_langchain(pdf_path)
+
+    def _extract_with_langchain(self, pdf_path: str) -> str:
+        """Альтернативный метод извлечения через LangChain"""
+        try:
+            from langchain_community.document_loaders import PyPDFLoader
+            loader = PyPDFLoader(pdf_path)
+            documents = loader.load()
+            return "\n".join(doc.page_content for doc in documents)
+        except Exception as e:
+            print(f"Ошибка LangChain PDF loader: {e}")
+            return ""
+
+    def _extract_diagnosis_name(self, text: str) -> str:
+        """Извлекает название диагноза из текста"""
+        # Ищем в первых 3000 символах
+        search_text = text[:3000]
+        
+        for pattern in DIAGNOSIS_PATTERNS:
+            match = pattern.search(search_text)
+            if match:
+                diagnosis = match.group(1).strip()
+                # Очищаем от лишних символов
+                diagnosis = re.sub(r'\s+', ' ', diagnosis)
+                print(f"✅ Найден диагноз: {diagnosis}")
+                return diagnosis
+        
+        # Если не нашли, пробуем найти в заголовках
+        lines = search_text.split('\n')
+        for line in lines[:20]:  # Первые 20 строк
+            line = line.strip()
+            if len(line) > 10 and any(word in line.lower() for word in 
+                                    ['рекомендации', 'протокол', 'стандарт', 'алгоритм']):
+                print(f"✅ Найден заголовок документа: {line}")
+                return line
+        
+        print("⚠️ Диагноз не найден, используем значение по умолчанию")
+        return "Неизвестное заболевание"
+
+    def _parse_sections_advanced(self, text: str) -> Dict[str, str]:
+        """Улучшенный парсинг разделов документа"""
+        sections = {}
+        
+        # Пробуем разные паттерны
+        for pattern in SECTION_PATTERNS:
+            splits = pattern.split(text)
+            if len(splits) > 3:  # Если нашли разделы
+                print(f"Используем паттерн: {pattern.pattern}")
+                
+                # Обрабатываем найденные разделы
+                for i in range(1, len(splits), 3):
+                    if i + 2 < len(splits):
+                        number = splits[i].strip()
+                        title = splits[i + 1].strip()
+                        body = splits[i + 2].strip()
+                        
+                        # Формируем ключ
+                        if number and title:
+                            key = f"{number} {title}".strip()
+                        elif title:
+                            key = title
+                        else:
+                            continue
+                            
+                        # Очищаем тело раздела
+                        if body and len(body) > 50:  # Минимальная длина
+                            sections[key] = body
+                
+                if sections:  # Если нашли разделы, используем этот паттерн
+                    break
+        
+        # Если ничего не нашли, создаем один большой раздел
+        if not sections:
+            print("⚠️ Разделы не найдены, используем весь текст")
+            sections["guidelines"] = text
+        
+        print(f"✅ Найдено разделов: {len(sections)}")
+        for key in list(sections.keys())[:5]:  # Показываем первые 5
+            print(f"  - {key}")
+        
+        return sections
+
     def load_guidelines(self, pdf_path: str) -> Dict[str, str]:
         """
         Reads a Russian clinical guideline PDF and returns a dict:
@@ -89,29 +223,47 @@ class MedicalAssistant:
             print("❌ PDF not found")
             return {}
 
-        doc = fitz.open(pdf_path)
-        full_text = "\n".join(page.get_text("text") for page in doc)
-        doc.close()
+        # Извлекаем текст с fallback методами
+        full_text = self._extract_text_with_fallback(pdf_path)
+        
+        if not full_text or len(full_text.strip()) < 100:
+            print("❌ Не удалось извлечь текст из PDF")
+            return {}
 
-        # Grab diagnosis name from the first page
-        title = re.search(
-            r"(Сахарный диабет.*?|Гипертония.*?|Астма.*?)\n",
-            full_text[:2000],
-            re.I,
-        )
-        self.diagnosis_name = (
-            title.group(1).strip() if title else "Неизвестное заболевание"
-        )
-        print(f"✅ Diagnosis: {self.diagnosis_name}")
+        # Извлекаем название диагноза
+        self.diagnosis_name = self._extract_diagnosis_name(full_text)
+        print(f"✅ Диагноз: {self.diagnosis_name}")
 
-        # Split by headings
-        sections = {}
-        splits = SECTION_PATTERN.split(full_text)
-        # split returns [prefix, num1, title1, body1, num2, title2, body2, ...]
-        for i in range(1, len(splits), 3):
-            number, title, body = splits[i], splits[i + 1], splits[i + 2]
-            key = f"{number} {title}".strip()
-            sections[key] = body.strip()
+        # Парсим разделы с улучшенным алгоритмом
+        sections = self._parse_sections_advanced(full_text)
+        
+        # Если получили только один раздел "guidelines", пробуем разбить по-другому
+        if len(sections) == 1 and "guidelines" in sections:
+            # Пробуем разбить по ключевым словам
+            text = sections["guidelines"]
+            keyword_sections = {}
+            
+            # Ищем разделы по ключевым словам
+            keywords = [
+                ("Определение", r"(определение|дефиниция)"),
+                ("Этиология", r"(этиология|причины|факторы риска)"),
+                ("Патогенез", r"(патогенез|механизм)"),
+                ("Классификация", r"(классификация|типы|виды)"),
+                ("Диагностика", r"(диагностика|диагноз|обследование)"),
+                ("Лечение", r"(лечение|терапия|препараты)"),
+                ("Профилактика", r"(профилактика|предупреждение)"),
+                ("Прогноз", r"(прогноз|исход)"),
+            ]
+            
+            for section_name, pattern in keywords:
+                match = re.search(f"({pattern}.*?)(?=({'|'.join([p[1] for p in keywords])})|$)", 
+                                text, re.I | re.DOTALL)
+                if match:
+                    keyword_sections[section_name] = match.group(1).strip()
+            
+            if keyword_sections:
+                print(f"✅ Найдено разделов по ключевым словам: {len(keyword_sections)}")
+                sections = keyword_sections
 
         return sections
 
