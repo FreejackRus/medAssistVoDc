@@ -385,9 +385,13 @@
 
   // Кнопка "Скачать PDF"
   downloadBtn.addEventListener('click', async () => {
+    // Отладочная информация
+    console.log('DEBUG: fullMarkdown длина:', fullMarkdown ? fullMarkdown.length : 0);
+    console.log('DEBUG: fullMarkdown первые 200 символов:', fullMarkdown ? fullMarkdown.substring(0, 200) : 'пусто');
+    
     // Проверяем, есть ли валидный контент
     if (!fullMarkdown || fullMarkdown.trim().length < 100) {
-      alert('Недостаточно данных для генерации PDF. Сначала загрузите и обработайте PDF файл.');
+      alert(`Недостаточно данных для генерации PDF. Длина контента: ${fullMarkdown ? fullMarkdown.length : 0} символов. Сначала загрузите и обработайте PDF файл.`);
       return;
     }
 

@@ -93,16 +93,22 @@ async def download_pdf(request: Request) -> Response:
     body = await request.json()
     md = body.get("markdown", "").strip()
 
+    # Отладочная информация
+    print(f"DEBUG: Получен markdown длиной {len(md)} символов")
+    print(f"DEBUG: Первые 200 символов: {md[:200]}")
+
     # Валидация контента
     if not md or len(md) < 100:
+        print(f"DEBUG: Валидация не прошла - слишком короткий контент: {len(md)} символов")
         return Response(
-            content=json.dumps({"error": "Недостаточно данных для генерации PDF. Сначала загрузите и обработайте PDF файл."}),
+            content=json.dumps({"error": f"Недостаточно данных для генерации PDF. Получено {len(md)} символов, требуется минимум 100."}),
             media_type="application/json",
             status_code=400
         )
     
     # Проверяем, что это не просто ошибка
     if "❌" in md or "Ошибка" in md or "не удалось" in md.lower():
+        print(f"DEBUG: Валидация не прошла - найдены ошибки в контенте")
         return Response(
             content=json.dumps({"error": "Невозможно создать PDF из-за ошибок в обработке документа."}),
             media_type="application/json",
@@ -115,7 +121,9 @@ async def download_pdf(request: Request) -> Response:
             md,
             extensions=["tables", "fenced_code", "nl2br"]
         )
+        print(f"DEBUG: HTML body сгенерирован, длина: {len(html_body)} символов")
     except Exception as e:
+        print(f"DEBUG: Ошибка конвертации markdown: {str(e)}")
         html_body = f"<p><em>Ошибка обработки: {str(e)}</em></p>"
 
     # Полный HTML с кириллическим шрифтом
@@ -186,13 +194,16 @@ async def download_pdf(request: Request) -> Response:
     """)
 
     try:
+        print(f"DEBUG: Полный HTML длиной {len(full_html)} символов")
         pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
+        print(f"DEBUG: PDF сгенерирован, размер: {len(pdf_bytes)} байт")
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
             headers={"Content-Disposition": "attachment; filename=алгоритм_лечения.pdf"}
         )
     except Exception as e:
+        print(f"DEBUG: Ошибка генерации PDF: {str(e)}")
         # Fallback: возвращаем HTML, чтобы увидеть ошибку
         error_html = f"<h2>Ошибка генерации PDF</h2><p>{str(e)}</p><pre>{full_html[:2000]}...</pre>"
         return Response(content=error_html, media_type="text/html")
