@@ -145,6 +145,30 @@ class MedicalAssistant:
             print(f"Ошибка LangChain PDF loader: {e}")
             return ""
 
+    def _extract_first_page(self, pdf_path: str) -> str:
+        """Извлекает текст только с первой страницы PDF"""
+        try:
+            doc = fitz.open(pdf_path)
+            if len(doc) > 0:
+                first_page = doc[0]
+                text = first_page.get_text("text")
+                doc.close()
+                return text
+            doc.close()
+            return ""
+        except Exception as e:
+            print(f"Ошибка извлечения первой страницы: {e}")
+            # Fallback через LangChain
+            try:
+                from langchain_community.document_loaders import PyPDFLoader
+                loader = PyPDFLoader(pdf_path)
+                documents = loader.load()
+                if documents:
+                    return documents[0].page_content
+            except Exception as e2:
+                print(f"Ошибка fallback для первой страницы: {e2}")
+            return ""
+
     def _is_valid_section_title(self, title: str) -> bool:
         """Проверяет, является ли заголовок валидным разделом"""
         if not title or len(title.strip()) < 3:
@@ -188,31 +212,97 @@ class MedicalAssistant:
             
         return False
 
-    def _extract_diagnosis_name(self, text: str) -> str:
-        """Извлекает название диагноза из текста"""
-        # Ищем в первых 3000 символах
-        search_text = text[:3000]
+    def _extract_diagnosis_name(self, text: str, pdf_path: str = None) -> str:
+        """Извлекает название диагноза и код МКБ-10 с первой страницы PDF"""
+        # Если есть путь к PDF, извлекаем текст именно с первой страницы
+        if pdf_path:
+            first_page = self._extract_first_page(pdf_path)
+            print(f"DEBUG: Извлечен текст с первой страницы ({len(first_page)} символов)")
+        else:
+            # Иначе используем первые 2000 символов переданного текста
+            first_page = text[:2000]
         
-        for pattern in DIAGNOSIS_PATTERNS:
-            match = pattern.search(search_text)
+        # Паттерны для поиска кода МКБ-10
+        mkb_patterns = [
+            re.compile(r'([A-Z]\d{2}(?:\.\d{1,2})?)', re.I),  # A00, B12.3, C45.1
+            re.compile(r'МКБ[- ]?10?[:\s]*([A-Z]\d{2}(?:\.\d{1,2})?)', re.I),
+            re.compile(r'код[:\s]*([A-Z]\d{2}(?:\.\d{1,2})?)', re.I),
+        ]
+        
+        # Паттерны для названия диагноза
+        diagnosis_patterns = [
+            # Клинические рекомендации по...
+            re.compile(r'клинические\s+рекомендации\s+(?:по\s+)?(.+?)(?:\n|$)', re.I),
+            # Протокол ведения больных...
+            re.compile(r'протокол\s+ведения\s+больных\s+(.+?)(?:\n|$)', re.I),
+            # Стандарт медицинской помощи...
+            re.compile(r'стандарт\s+медицинской\s+помощи\s+(?:при\s+)?(.+?)(?:\n|$)', re.I),
+            # Алгоритм диагностики и лечения...
+            re.compile(r'алгоритм\s+(?:диагностики\s+и\s+)?лечения\s+(.+?)(?:\n|$)', re.I),
+            # Методические рекомендации...
+            re.compile(r'методические\s+рекомендации\s+(?:по\s+)?(.+?)(?:\n|$)', re.I),
+            # Просто название болезни в начале документа
+            re.compile(r'^([А-ЯЁ][а-яё\s]+(?:болезнь|синдром|заболевание|патология|недостаточность|гипертензия|диабет|астма|пневмония|инфаркт|стенокардия|аритмия|тахикардия|брадикардия)[а-яё\s]*)', re.M),
+        ]
+        
+        mkb_code = None
+        diagnosis_name = None
+        
+        # Ищем код МКБ-10
+        for pattern in mkb_patterns:
+            matches = pattern.findall(first_page)
+            if matches:
+                # Берем первый найденный код
+                mkb_code = matches[0].upper()
+                print(f"✅ Найден код МКБ-10: {mkb_code}")
+                break
+        
+        # Ищем название диагноза
+        for pattern in diagnosis_patterns:
+            match = pattern.search(first_page)
             if match:
-                diagnosis = match.group(1).strip()
-                # Очищаем от лишних символов
-                diagnosis = re.sub(r'\s+', ' ', diagnosis)
-                print(f"✅ Найден диагноз: {diagnosis}")
-                return diagnosis
+                diagnosis_name = match.group(1).strip()
+                # Очищаем от лишних символов и переносов
+                diagnosis_name = re.sub(r'\s+', ' ', diagnosis_name)
+                diagnosis_name = re.sub(r'["\'\(\)\[\]{}]', '', diagnosis_name)
+                diagnosis_name = diagnosis_name.strip(' .,;:')
+                
+                if len(diagnosis_name) > 10:  # Минимальная длина
+                    print(f"✅ Найдено название диагноза: {diagnosis_name}")
+                    break
         
-        # Если не нашли, пробуем найти в заголовках
-        lines = search_text.split('\n')
-        for line in lines[:20]:  # Первые 20 строк
-            line = line.strip()
-            if len(line) > 10 and any(word in line.lower() for word in 
-                                    ['рекомендации', 'протокол', 'стандарт', 'алгоритм']):
-                print(f"✅ Найден заголовок документа: {line}")
-                return line
+        # Если не нашли название, ищем в заголовках документа
+        if not diagnosis_name:
+            lines = first_page.split('\n')
+            for line in lines[:15]:  # Первые 15 строк
+                line = line.strip()
+                if (len(line) > 15 and len(line) < 200 and 
+                    any(word in line.lower() for word in 
+                        ['рекомендации', 'протокол', 'стандарт', 'алгоритм', 'методические']) and
+                    not any(word in line.lower() for word in 
+                        ['утверждено', 'министерство', 'департамент', 'главный', 'врач'])):
+                    diagnosis_name = line
+                    print(f"✅ Найден заголовок документа: {diagnosis_name}")
+                    break
         
-        print("⚠️ Диагноз не найден, используем значение по умолчанию")
-        return "Неизвестное заболевание"
+        # Формируем итоговое название
+        if mkb_code and diagnosis_name:
+            result = f"{diagnosis_name} ({mkb_code})"
+        elif diagnosis_name:
+            result = diagnosis_name
+        elif mkb_code:
+            result = f"Заболевание с кодом {mkb_code}"
+        else:
+            # Последняя попытка - ищем любое медицинское название
+            medical_terms = re.findall(r'([А-ЯЁ][а-яё\s]{10,80}(?:болезнь|синдром|заболевание|патология|недостаточность|гипертензия|диабет|астма|пневмония|инфаркт))', first_page)
+            if medical_terms:
+                result = medical_terms[0].strip()
+                print(f"✅ Найден медицинский термин: {result}")
+            else:
+                result = "Неизвестное заболевание"
+                print("⚠️ Диагноз не найден, используем значение по умолчанию")
+        
+        return result
 
     def _parse_sections_advanced(self, text: str) -> Dict[str, str]:
         """Улучшенный парсинг разделов документа"""
@@ -277,7 +367,7 @@ class MedicalAssistant:
             return {}
 
         # Извлекаем название диагноза
-        self.diagnosis_name = self._extract_diagnosis_name(full_text)
+        self.diagnosis_name = self._extract_diagnosis_name(full_text, pdf_path)
         print(f"✅ Диагноз: {self.diagnosis_name}")
 
         # Парсим разделы с улучшенным алгоритмом
