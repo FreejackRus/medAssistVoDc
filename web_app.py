@@ -1,14 +1,17 @@
 # web_app.py
 import asyncio
 import json
+import os
+import tempfile
 import textwrap
 from pathlib import Path
 from typing import AsyncGenerator
+from urllib.parse import quote
 
 import markdown
 import weasyprint
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, StreamingResponse, Response, FileResponse
 
 from bot import MedicalAssistant
 
@@ -195,12 +198,28 @@ async def download_pdf(request: Request) -> Response:
 
     try:
         print(f"DEBUG: Полный HTML длиной {len(full_html)} символов")
-        pdf_bytes = weasyprint.HTML(string=full_html).write_pdf()
-        print(f"DEBUG: PDF сгенерирован, размер: {len(pdf_bytes)} байт")
-        return Response(
-            content=pdf_bytes,
+        
+        # Создаем временный файл для PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            tmp_path = tmp_file.name
+            
+        # Генерируем PDF в файл
+        weasyprint.HTML(string=full_html).write_pdf(tmp_path)
+        
+        # Проверяем размер файла
+        file_size = os.path.getsize(tmp_path)
+        print(f"DEBUG: PDF сгенерирован в файл {tmp_path}, размер: {file_size} байт")
+        
+        # Используем правильное имя файла в ASCII для заголовка
+        filename_encoded = quote("алгоритм_лечения.pdf")
+        
+        return FileResponse(
+            path=tmp_path,
             media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=алгоритм_лечения.pdf"}
+            filename="алгоритм_лечения.pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
+            }
         )
     except Exception as e:
         print(f"DEBUG: Ошибка генерации PDF: {str(e)}")
