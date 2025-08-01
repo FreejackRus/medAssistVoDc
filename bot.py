@@ -27,9 +27,10 @@ MAX_INPUT_TOK: int = 128_000
 SECTION_PATTERNS = [
     re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
     re.compile(r"^([IVX]+)\.\s+([^\n]+)", re.MULTILINE),       # I., II., III. + title
-    re.compile(r"^([А-Я][а-я]+)\s*\n", re.MULTILINE),         # Заголовки с большой буквы
     re.compile(r"^(\d+)\.\s+([А-ЯЁ][^\n]+)", re.MULTILINE),   # 1. Заголовок
-    re.compile(r"^([А-ЯЁ\s]{3,})\n", re.MULTILINE),           # ЗАГОЛОВКИ ЗАГЛАВНЫМИ
+    re.compile(r"^([А-Я][а-я]+(?:\s+[а-я]+)*)\s*\n", re.MULTILINE),  # Заголовки с большой буквы
+    # Более строгий паттерн для заглавных заголовков - только если это медицинские термины
+    re.compile(r"^([А-ЯЁ]{2,}(?:\s+[А-ЯЁ]{2,})*)\s*\n(?=[А-ЯЁа-яё])", re.MULTILINE),  # ЗАГОЛОВКИ ЗАГЛАВНЫМИ
 ]
 
 # Паттерны для извлечения названия диагноза
@@ -144,6 +145,49 @@ class MedicalAssistant:
             print(f"Ошибка LangChain PDF loader: {e}")
             return ""
 
+    def _is_valid_section_title(self, title: str) -> bool:
+        """Проверяет, является ли заголовок валидным разделом"""
+        if not title or len(title.strip()) < 3:
+            return False
+            
+        title_lower = title.lower().strip()
+        
+        # Исключаем годы и числовые данные
+        if re.match(r'^\d{4}\s*г\.?\s*', title_lower):
+            return False
+            
+        # Исключаем фрагменты с годами
+        if 'г.' in title_lower and any(year in title_lower for year in ['2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024']):
+            return False
+            
+        # Исключаем слишком короткие заголовки из заглавных букв
+        if title.isupper() and len(title) < 10:
+            return False
+            
+        # Исключаем фрагменты статистики
+        if any(word in title_lower for word in ['превысила', 'составила', 'увеличилась', 'снизилась', '%', 'процент']):
+            return False
+            
+        # Разрешаем медицинские термины и разделы
+        medical_keywords = [
+            'определение', 'этиология', 'патогенез', 'классификация', 'диагностика', 
+            'лечение', 'терапия', 'профилактика', 'прогноз', 'рекомендации',
+            'показания', 'противопоказания', 'дозировка', 'мониторинг', 'осложнения'
+        ]
+        
+        if any(keyword in title_lower for keyword in medical_keywords):
+            return True
+            
+        # Разрешаем заголовки с номерами разделов
+        if re.match(r'^\d+\.?\d*\s+[а-яё]', title_lower):
+            return True
+            
+        # Разрешаем заголовки, начинающиеся с заглавной буквы и содержащие строчные
+        if re.match(r'^[А-ЯЁ][а-яё]', title) and len(title) > 5:
+            return True
+            
+        return False
+
     def _extract_diagnosis_name(self, text: str) -> str:
         """Извлекает название диагноза из текста"""
         # Ищем в первых 3000 символах
@@ -187,17 +231,19 @@ class MedicalAssistant:
                         title = splits[i + 1].strip()
                         body = splits[i + 2].strip()
                         
-                        # Формируем ключ
-                        if number and title:
-                            key = f"{number} {title}".strip()
-                        elif title:
-                            key = title
-                        else:
-                            continue
-                            
-                        # Очищаем тело раздела
-                        if body and len(body) > 50:  # Минимальная длина
-                            sections[key] = body
+                        # Фильтруем нерелевантные заголовки
+                        if self._is_valid_section_title(title):
+                            # Формируем ключ
+                            if number and title:
+                                key = f"{number} {title}".strip()
+                            elif title:
+                                key = title
+                            else:
+                                continue
+                                
+                            # Очищаем тело раздела
+                            if body and len(body) > 50:  # Минимальная длина
+                                sections[key] = body
                 
                 if sections:  # Если нашли разделы, используем этот паттерн
                     break
