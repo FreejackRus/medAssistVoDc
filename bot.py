@@ -22,7 +22,7 @@ SERVICES_FILE: Path = Path("docs/services.xlsx")
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 TOP_K: int = 50
-MAX_INPUT_TOK: int = 128_000
+MAX_INPUT_TOK: int = 135_000
 SECTION_PATTERN = re.compile(
     r"^(\d+(?:\.\d+)*)\s+([^\n]+)",  # 1.1, 2.3.4, … + title
     re.MULTILINE,
