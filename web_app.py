@@ -93,8 +93,21 @@ async def download_pdf(request: Request) -> Response:
     body = await request.json()
     md = body.get("markdown", "").strip()
 
-    if not md:
-        md = "## Нет данных для отображения"
+    # Валидация контента
+    if not md or len(md) < 100:
+        return Response(
+            content=json.dumps({"error": "Недостаточно данных для генерации PDF. Сначала загрузите и обработайте PDF файл."}),
+            media_type="application/json",
+            status_code=400
+        )
+    
+    # Проверяем, что это не просто ошибка
+    if "❌" in md or "Ошибка" in md or "не удалось" in md.lower():
+        return Response(
+            content=json.dumps({"error": "Невозможно создать PDF из-за ошибок в обработке документа."}),
+            media_type="application/json",
+            status_code=400
+        )
 
     try:
         # Конвертируем Markdown → HTML с поддержкой таблиц
