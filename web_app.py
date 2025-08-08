@@ -30,6 +30,11 @@ def index():
     return HTMLResponse((templates_dir / "index.html").read_text(encoding="utf-8"))
 
 
+@app.get("/calculators", response_class=HTMLResponse)
+def calculators():
+    return HTMLResponse((templates_dir / "calculators.html").read_text(encoding="utf-8"))
+
+
 # ---------- SSE Stream Writer ----------
 class AsyncStreamWriter:
     def __init__(self, queue: asyncio.Queue[str]) -> None:
@@ -209,6 +214,106 @@ async def start_dialogue(pdf: UploadFile = File(...)) -> Response:
         )
     finally:
         pdf_path.unlink(missing_ok=True)
+
+
+@app.post("/use_sample_pdf")
+async def use_sample_pdf() -> Response:
+    """Использует предустановленный PDF файл для демонстрации"""
+    sample_pdf_path = Path("КР287_2.pdf")
+    
+    if not sample_pdf_path.exists():
+        return Response(
+            content=json.dumps({"error": "Образец PDF файла не найден"}),
+            media_type="application/json",
+            status_code=404
+        )
+    
+    try:
+        # Загружаем структуру рекомендаций
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(sample_pdf_path)
+        )
+        
+        if not sections:
+            return Response(
+                content=json.dumps({"error": "Не удалось прочитать образец PDF"}),
+                media_type="application/json",
+                status_code=400
+            )
+        
+        # Создаем новую сессию
+        session_id = f"session_{len(dialogue_sessions) + 1}"
+        dialogue_sessions[session_id] = {
+            "sections": sections,
+            "history": [],
+            "diagnosis": assistant.diagnosis_name
+        }
+        
+        return Response(
+            content=json.dumps({
+                "session_id": session_id,
+                "diagnosis": assistant.diagnosis_name,
+                "message": "Диалоговая сессия создана с образцом клинических рекомендаций. Теперь вы можете задавать вопросы."
+            }),
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": f"Ошибка обработки образца PDF: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
+
+
+@app.post("/start_dialogue_sample")
+async def start_dialogue_sample() -> Response:
+    """Начать диалог с предустановленным PDF файлом"""
+    sample_pdf_path = Path("КР287_2.pdf")
+    
+    if not sample_pdf_path.exists():
+        return Response(
+            content=json.dumps({"error": "Образец PDF файла не найден"}),
+            media_type="application/json",
+            status_code=404
+        )
+    
+    try:
+        # Загружаем структуру рекомендаций
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(sample_pdf_path)
+        )
+        
+        if not sections:
+            return Response(
+                content=json.dumps({"error": "Не удалось прочитать образец PDF"}),
+                media_type="application/json",
+                status_code=400
+            )
+        
+        # Создаем новую сессию диалога
+        session_id = f"session_{len(dialogue_sessions) + 1}"
+        dialogue_sessions[session_id] = {
+            "sections": sections,
+            "history": [],
+            "diagnosis": assistant.diagnosis_name
+        }
+        
+        return Response(
+            content=json.dumps({
+                "session_id": session_id,
+                "diagnosis": assistant.diagnosis_name,
+                "message": "Диалоговая сессия создана с образцом клинических рекомендаций. Теперь вы можете задавать вопросы."
+            }),
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": f"Ошибка инициализации диалога: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
 
 
 @app.post("/generate_services")

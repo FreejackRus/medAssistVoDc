@@ -149,9 +149,37 @@
     #result tr:hover {
       background-color: #f1f5f9;
     }
+
+    .nav-link {
+      color: #64748b;
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .nav-link:hover {
+      background-color: rgba(14, 165, 233, 0.1);
+      color: #0ea5e9;
+    }
   </style>
 </head>
 <body class="font-['Inter']">
+  <!-- Навигация -->
+  <nav class="glass-effect border-b border-white/20 mb-8">
+    <div class="max-w-6xl mx-auto px-4 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-8">
+          <h1 class="text-xl font-bold text-slate-800">ИИ-ассистент эксперта</h1>
+          <div class="flex space-x-4">
+            <a href="/" class="nav-link bg-blue-100 text-blue-600">Главная</a>
+            <a href="/calculators" class="nav-link">Калькуляторы</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
 <div class="max-w-4xl mx-auto py-12 px-4">
   <!-- Заголовок -->
   <div class="text-center mb-12 fade-in">
@@ -182,6 +210,24 @@
         </div>
       </div>
     </form>
+    
+    <!-- Разделитель -->
+    <div class="flex items-center my-6">
+      <div class="flex-1 border-t border-slate-300"></div>
+      <span class="px-4 text-slate-500 text-sm">или</span>
+      <div class="flex-1 border-t border-slate-300"></div>
+    </div>
+    
+    <!-- Кнопка образца -->
+    <div class="text-center">
+      <button id="useSampleBtn" class="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold px-8 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105">
+        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        Использовать образец клинических рекомендаций
+      </button>
+      <p class="text-slate-500 text-sm mt-2">Попробуйте систему с готовым примером</p>
+    </div>
   </div>
 
   <!-- Индикатор прогресса -->
@@ -420,6 +466,8 @@
       setTimeout(() => {
         progressContainer.classList.add('hidden');
         actionButtons.classList.remove('hidden');
+        // Добавляем кнопки "Предложить услуги" после завершения генерации
+        addServicesButtons();
       }, 1000);
 
     } catch (error) {
@@ -503,10 +551,53 @@
     }
   });
 
+  // Кнопка "Использовать образец PDF"
+  const useSampleBtn = document.getElementById('useSampleBtn');
+  useSampleBtn.addEventListener('click', async () => {
+    try {
+      useSampleBtn.disabled = true;
+      useSampleBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Загрузка...';
+
+      const res = await fetch('/use_sample_pdf', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Ошибка загрузки образца');
+      }
+
+      // Обновляем интерфейс как при обычной загрузке
+      fileName.textContent = 'КР287_2.pdf (образец)';
+      fileSize.textContent = 'Клинические рекомендации';
+      fileInfo.classList.remove('hidden');
+      
+      // Показываем прогресс
+      progressContainer.classList.remove('hidden');
+      progressBar.style.width = '100%';
+      progressText.textContent = 'Обработка завершена';
+      
+      // Показываем результат
+      resultContainer.classList.remove('hidden');
+      resultContent.innerHTML = marked.parse(data.result);
+      fullMarkdown = data.result;
+      
+      // Показываем кнопки действий
+      actionButtons.classList.remove('hidden');
+      
+      // Устанавливаем флаг, что файл загружен
+      currentFile = new File(['sample'], 'КР287_2.pdf', { type: 'application/pdf' });
+
+    } catch (error) {
+      alert('Ошибка загрузки образца: ' + error.message);
+    } finally {
+      useSampleBtn.disabled = false;
+      useSampleBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Использовать образец PDF';
+    }
+  });
+
   // Диалоговая функциональность
   startDialogueBtn.addEventListener('click', async () => {
     if (!currentFile) {
-      alert('Сначала загрузите PDF файл');
+      alert('Сначала загрузите PDF файл или используйте образец');
       return;
     }
 
@@ -514,11 +605,20 @@
       startDialogueBtn.disabled = true;
       startDialogueBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Инициализация...';
 
-      const formData = new FormData();
-      formData.append('pdf', currentFile);
-
-      const res = await fetch('/start_dialogue', { method: 'POST', body: formData });
-      const data = await res.json();
+      let res, data;
+      
+      // Проверяем, используется ли образец PDF
+      if (currentFile.name === 'КР287_2.pdf' && currentFile.size === 6) {
+        // Используем специальный endpoint для образца
+        res = await fetch('/start_dialogue_sample', { method: 'POST' });
+        data = await res.json();
+      } else {
+        // Обычная загрузка файла
+        const formData = new FormData();
+        formData.append('pdf', currentFile);
+        res = await fetch('/start_dialogue', { method: 'POST', body: formData });
+        data = await res.json();
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'Ошибка инициализации диалога');
@@ -698,8 +798,16 @@
 
   // Функциональность генерации услуг
   function addServicesButtons() {
+    console.log('addServicesButtons вызвана');
+    const resultElement = document.getElementById('result');
+    if (!resultElement) {
+      console.log('Элемент result не найден');
+      return;
+    }
+    
     // Находим все заголовки разделов (h1, h2, h3)
-    const headers = result.querySelectorAll('h1, h2, h3, h4');
+    const headers = resultElement.querySelectorAll('h1, h2, h3, h4');
+    console.log('Найдено заголовков:', headers.length);
     
     headers.forEach((header, index) => {
       // Пропускаем если кнопка уже добавлена
@@ -733,12 +841,16 @@
 
   // Генерация услуг для раздела
   async function generateServicesForSection(stepTitle, stepContent, button) {
+    console.log('generateServicesForSection вызвана для:', stepTitle);
+    console.log('Содержимое раздела:', stepContent.substring(0, 200) + '...');
+    
     const originalText = button.innerHTML;
     
     try {
       button.disabled = true;
       button.innerHTML = '<svg class="w-3 h-3 inline animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>';
       
+      console.log('Отправляем запрос на /generate_services');
       const response = await fetch('/generate_services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -747,6 +859,8 @@
           step_text: stepContent
         })
       });
+      
+      console.log('Ответ получен, статус:', response.status);
       
       const data = await response.json();
       
@@ -817,18 +931,8 @@
     document.body.appendChild(modal);
   }
 
-  // Добавляем кнопки услуг после генерации алгоритма
-  const originalHandleFileUpload = handleFileUpload;
-  handleFileUpload = async function(file) {
-    await originalHandleFileUpload.call(this, file);
-    
-    // Добавляем кнопки услуг после завершения генерации
-    setTimeout(() => {
-      if (fullMarkdown && fullMarkdown.length > 0) {
-        addServicesButtons();
-      }
-    }, 1500);
-  };
+  // Отладочная информация для диагностики
+  console.log('Скрипт загружен, функции определены');
 </script>
 </body>
 </html>

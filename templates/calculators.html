@@ -1,0 +1,1201 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>Медицинские калькуляторы</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+      font-family: 'Inter', Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    .glass-effect {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .calculator-card {
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .calculator-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+
+    .fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-highlight {
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+      color: white;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      margin-top: 1rem;
+      font-weight: 600;
+    }
+
+    .input-group {
+      margin-bottom: 1rem;
+    }
+
+    .calculator-input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      transition: border-color 0.3s ease;
+    }
+
+    .calculator-input:focus {
+      outline: none;
+      border-color: #0ea5e9;
+      box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+    }
+
+    .btn-calculate {
+      background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-calculate:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .nav-link {
+      color: #64748b;
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .nav-link:hover {
+      background-color: rgba(14, 165, 233, 0.1);
+      color: #0ea5e9;
+    }
+  </style>
+</head>
+<body class="font-['Inter']">
+  <!-- Навигация -->
+  <nav class="glass-effect border-b border-white/20 mb-8">
+    <div class="max-w-6xl mx-auto px-4 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-8">
+          <h1 class="text-xl font-bold text-slate-800">ИИ-ассистент эксперта</h1>
+          <div class="flex space-x-4">
+            <a href="/" class="nav-link">Главная</a>
+            <a href="/calculators" class="nav-link bg-blue-100 text-blue-600">Калькуляторы</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-6xl mx-auto py-8 px-4">
+    <!-- Заголовок -->
+    <div class="text-center mb-12 fade-in">
+      <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full mb-6">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+        </svg>
+      </div>
+      <h1 class="text-5xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-4">
+        Медицинские калькуляторы
+      </h1>
+      <p class="text-slate-600 text-lg max-w-2xl mx-auto">
+        Коллекция медицинских калькуляторов для быстрых расчетов в клинической практике
+      </p>
+    </div>
+
+    <!-- Сетка калькуляторов -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+      <!-- ИМТ -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('bmi')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Индекс массы тела</h3>
+            <p class="text-slate-600 text-sm">Расчет ИМТ</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Определение индекса массы тела для оценки веса пациента</p>
+      </div>
+
+      <!-- Клиренс креатинина -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('creatinine')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Клиренс креатинина</h3>
+            <p class="text-slate-600 text-sm">Формула Кокрофта-Голта</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Оценка функции почек по клиренсу креатинина</p>
+      </div>
+
+      <!-- SCORE -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('score')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">SCORE</h3>
+            <p class="text-slate-600 text-sm">Сердечно-сосудистый риск</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Оценка 10-летнего риска смерти от сердечно-сосудистых заболеваний</p>
+      </div>
+
+      <!-- Площадь поверхности тела -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('bsa')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v12a4 4 0 004 4h4a2 2 0 002-2V5z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Площадь поверхности тела</h3>
+            <p class="text-slate-600 text-sm">Формула Дюбуа</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет площади поверхности тела для дозирования препаратов</p>
+      </div>
+
+      <!-- Доза препарата по весу -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('dosage')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Доза препарата</h3>
+            <p class="text-slate-600 text-sm">Расчет по весу</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет дозы препарата на основе массы тела пациента</p>
+      </div>
+
+      <!-- Калькулятор жидкости -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('fluid')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Потребность в жидкости</h3>
+            <p class="text-slate-600 text-sm">Суточная потребность</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет суточной потребности в жидкости</p>
+      </div>
+
+      <!-- Перцентили роста и веса -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('percentiles')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Перцентили роста и веса</h3>
+            <p class="text-slate-600 text-sm">Оценка физического развития</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Определение перцентилей роста и веса у детей</p>
+      </div>
+
+      <!-- SDS (Z-score) -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('sds')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">SDS (Z-score)</h3>
+            <p class="text-slate-600 text-sm">Стандартные отклонения</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет стандартных отклонений роста и веса</p>
+      </div>
+
+      <!-- Костный возраст -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('boneAge')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Костный возраст</h3>
+            <p class="text-slate-600 text-sm">Оценка созревания скелета</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Сравнение костного и хронологического возраста</p>
+      </div>
+
+      <!-- Прогноз роста -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('heightPrediction')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Прогноз роста</h3>
+            <p class="text-slate-600 text-sm">Целевой рост ребенка</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет ожидаемого роста на основе роста родителей</p>
+      </div>
+
+      <!-- Стадии Таннера -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('tanner')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-violet-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Стадии Таннера</h3>
+            <p class="text-slate-600 text-sm">Оценка полового развития</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Определение стадии полового созревания</p>
+      </div>
+
+      <!-- Доза инсулина -->
+      <div class="calculator-card glass-effect rounded-2xl p-6 fade-in" onclick="openCalculator('insulin')">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center mr-4">
+            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 7.172V5L8 4z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">Доза инсулина</h3>
+            <p class="text-slate-600 text-sm">Расчет дозы для детей</p>
+          </div>
+        </div>
+        <p class="text-slate-600">Расчет суточной дозы инсулина для детей с диабетом</p>
+      </div>
+    </div>
+
+    <!-- Модальное окно для калькуляторов -->
+    <div id="calculatorModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+      <div class="glass-effect rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-6">
+            <h2 id="calculatorTitle" class="text-2xl font-bold text-slate-800"></h2>
+            <button onclick="closeCalculator()" class="text-slate-400 hover:text-slate-600">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+          
+          <div id="calculatorContent">
+            <!-- Содержимое калькулятора будет загружаться динамически -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openCalculator(type) {
+      const modal = document.getElementById('calculatorModal');
+      const title = document.getElementById('calculatorTitle');
+      const content = document.getElementById('calculatorContent');
+      
+      modal.classList.remove('hidden');
+      
+      switch(type) {
+        case 'bmi':
+          title.textContent = 'Индекс массы тела (ИМТ)';
+          content.innerHTML = getBMICalculator();
+          break;
+        case 'creatinine':
+          title.textContent = 'Клиренс креатинина';
+          content.innerHTML = getCreatinineCalculator();
+          break;
+        case 'score':
+          title.textContent = 'SCORE - Сердечно-сосудистый риск';
+          content.innerHTML = getSCORECalculator();
+          break;
+        case 'bsa':
+          title.textContent = 'Площадь поверхности тела';
+          content.innerHTML = getBSACalculator();
+          break;
+        case 'dosage':
+          title.textContent = 'Доза препарата по весу';
+          content.innerHTML = getDosageCalculator();
+          break;
+        case 'fluid':
+          title.textContent = 'Потребность в жидкости';
+          content.innerHTML = getFluidCalculator();
+          break;
+        case 'percentiles':
+          title.textContent = 'Перцентили роста и веса';
+          content.innerHTML = getPercentilesCalculator();
+          break;
+        case 'sds':
+          title.textContent = 'SDS (Z-score)';
+          content.innerHTML = getSDSCalculator();
+          break;
+        case 'boneAge':
+          title.textContent = 'Костный возраст';
+          content.innerHTML = getBoneAgeCalculator();
+          break;
+        case 'heightPrediction':
+          title.textContent = 'Прогноз роста';
+          content.innerHTML = getHeightPredictionCalculator();
+          break;
+        case 'tanner':
+          title.textContent = 'Стадии Таннера';
+          content.innerHTML = getTannerCalculator();
+          break;
+        case 'insulin':
+          title.textContent = 'Доза инсулина';
+          content.innerHTML = getInsulinCalculator();
+          break;
+      }
+    }
+
+    function closeCalculator() {
+      document.getElementById('calculatorModal').classList.add('hidden');
+    }
+
+    function getBMICalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост (см)</label>
+          <input type="number" id="height" class="calculator-input" placeholder="170">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес (кг)</label>
+          <input type="number" id="weight" class="calculator-input" placeholder="70">
+        </div>
+        <button onclick="calculateBMI()" class="btn-calculate w-full">Рассчитать ИМТ</button>
+        <div id="bmiResult"></div>
+      `;
+    }
+
+    function getCreatinineCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="age" class="calculator-input" placeholder="50">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес (кг)</label>
+          <input type="number" id="weight" class="calculator-input" placeholder="70">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Креатинин сыворотки (мкмоль/л)</label>
+          <input type="number" id="creatinine" class="calculator-input" placeholder="90">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="gender" class="calculator-input">
+            <option value="male">Мужской</option>
+            <option value="female">Женский</option>
+          </select>
+        </div>
+        <button onclick="calculateCreatinine()" class="btn-calculate w-full">Рассчитать клиренс</button>
+        <div id="creatinineResult"></div>
+      `;
+    }
+
+    function getSCORECalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="age" class="calculator-input" placeholder="50" min="40" max="65">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="gender" class="calculator-input">
+            <option value="male">Мужской</option>
+            <option value="female">Женский</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Курение</label>
+          <select id="smoking" class="calculator-input">
+            <option value="no">Не курит</option>
+            <option value="yes">Курит</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Общий холестерин (ммоль/л)</label>
+          <input type="number" id="cholesterol" class="calculator-input" placeholder="5.0" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Систолическое АД (мм рт.ст.)</label>
+          <input type="number" id="systolic" class="calculator-input" placeholder="140">
+        </div>
+        <button onclick="calculateSCORE()" class="btn-calculate w-full">Рассчитать SCORE</button>
+        <div id="scoreResult"></div>
+      `;
+    }
+
+    function getBSACalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост (см)</label>
+          <input type="number" id="height" class="calculator-input" placeholder="170">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес (кг)</label>
+          <input type="number" id="weight" class="calculator-input" placeholder="70">
+        </div>
+        <button onclick="calculateBSA()" class="btn-calculate w-full">Рассчитать площадь</button>
+        <div id="bsaResult"></div>
+      `;
+    }
+
+    function getDosageCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес пациента (кг)</label>
+          <input type="number" id="weight" class="calculator-input" placeholder="70">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Доза на кг веса (мг/кг)</label>
+          <input type="number" id="dosePerKg" class="calculator-input" placeholder="10" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Кратность приема в сутки</label>
+          <input type="number" id="frequency" class="calculator-input" placeholder="2" min="1">
+        </div>
+        <button onclick="calculateDosage()" class="btn-calculate w-full">Рассчитать дозу</button>
+        <div id="dosageResult"></div>
+      `;
+    }
+
+    function getFluidCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес пациента (кг)</label>
+          <input type="number" id="weight" class="calculator-input" placeholder="70">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст</label>
+          <select id="ageGroup" class="calculator-input">
+            <option value="adult">Взрослый</option>
+            <option value="elderly">Пожилой (>65 лет)</option>
+            <option value="child">Ребенок</option>
+          </select>
+        </div>
+        <button onclick="calculateFluid()" class="btn-calculate w-full">Рассчитать потребность</button>
+        <div id="fluidResult"></div>
+      `;
+    }
+
+    function getPercentilesCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="childAge" class="calculator-input" placeholder="10" min="0" max="18" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="childGender" class="calculator-input">
+            <option value="male">Мальчик</option>
+            <option value="female">Девочка</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост (см)</label>
+          <input type="number" id="childHeight" class="calculator-input" placeholder="140">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес (кг)</label>
+          <input type="number" id="childWeight" class="calculator-input" placeholder="35">
+        </div>
+        <button onclick="calculatePercentiles()" class="btn-calculate w-full">Рассчитать перцентили</button>
+        <div id="percentilesResult"></div>
+      `;
+    }
+
+    function getSDSCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="childAge" class="calculator-input" placeholder="10" min="0" max="18" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="childGender" class="calculator-input">
+            <option value="male">Мальчик</option>
+            <option value="female">Девочка</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост (см)</label>
+          <input type="number" id="childHeight" class="calculator-input" placeholder="140">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес (кг)</label>
+          <input type="number" id="childWeight" class="calculator-input" placeholder="35">
+        </div>
+        <button onclick="calculateSDS()" class="btn-calculate w-full">Рассчитать SDS</button>
+        <div id="sdsResult"></div>
+      `;
+    }
+
+    function getBoneAgeCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Хронологический возраст (лет)</label>
+          <input type="number" id="chronologicalAge" class="calculator-input" placeholder="10" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Костный возраст (лет)</label>
+          <input type="number" id="boneAge" class="calculator-input" placeholder="9.5" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="childGender" class="calculator-input">
+            <option value="male">Мальчик</option>
+            <option value="female">Девочка</option>
+          </select>
+        </div>
+        <button onclick="calculateBoneAge()" class="btn-calculate w-full">Оценить костный возраст</button>
+        <div id="boneAgeResult"></div>
+      `;
+    }
+
+    function getHeightPredictionCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост отца (см)</label>
+          <input type="number" id="fatherHeight" class="calculator-input" placeholder="175">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Рост матери (см)</label>
+          <input type="number" id="motherHeight" class="calculator-input" placeholder="165">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол ребенка</label>
+          <select id="childGender" class="calculator-input">
+            <option value="male">Мальчик</option>
+            <option value="female">Девочка</option>
+          </select>
+        </div>
+        <button onclick="calculateHeightPrediction()" class="btn-calculate w-full">Рассчитать прогноз</button>
+        <div id="heightPredictionResult"></div>
+      `;
+    }
+
+    function getTannerCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="childAge" class="calculator-input" placeholder="12" min="8" max="18" step="0.1">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Пол</label>
+          <select id="childGender" class="calculator-input">
+            <option value="male">Мальчик</option>
+            <option value="female">Девочка</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Стадия развития половых признаков</label>
+          <select id="tannerStage" class="calculator-input">
+            <option value="1">Стадия 1 (препубертат)</option>
+            <option value="2">Стадия 2 (начало пубертата)</option>
+            <option value="3">Стадия 3 (активный пубертат)</option>
+            <option value="4">Стадия 4 (поздний пубертат)</option>
+            <option value="5">Стадия 5 (взрослый тип)</option>
+          </select>
+        </div>
+        <button onclick="calculateTanner()" class="btn-calculate w-full">Оценить развитие</button>
+        <div id="tannerResult"></div>
+      `;
+    }
+
+    function getInsulinCalculator() {
+      return `
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Вес ребенка (кг)</label>
+          <input type="number" id="childWeight" class="calculator-input" placeholder="35">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Возраст (лет)</label>
+          <input type="number" id="childAge" class="calculator-input" placeholder="10" min="1" max="18">
+        </div>
+        <div class="input-group">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Стадия диабета</label>
+          <select id="diabetesStage" class="calculator-input">
+            <option value="honeymoon">Медовый месяц (0.3-0.5 ЕД/кг)</option>
+            <option value="prepubertal">Препубертат (0.7-1.0 ЕД/кг)</option>
+            <option value="pubertal">Пубертат (1.0-1.2 ЕД/кг)</option>
+            <option value="postpubertal">Постпубертат (0.8-1.0 ЕД/кг)</option>
+          </select>
+        </div>
+        <button onclick="calculateInsulin()" class="btn-calculate w-full">Рассчитать дозу</button>
+        <div id="insulinResult"></div>
+      `;
+    }
+
+    // Функции расчетов
+    function calculateBMI() {
+      const height = parseFloat(document.getElementById('height').value);
+      const weight = parseFloat(document.getElementById('weight').value);
+      
+      if (!height || !weight) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      const heightM = height / 100;
+      const bmi = weight / (heightM * heightM);
+      
+      let category = '';
+      let color = '';
+      
+      if (bmi < 18.5) {
+        category = 'Недостаточный вес';
+        color = 'text-blue-600';
+      } else if (bmi < 25) {
+        category = 'Нормальный вес';
+        color = 'text-green-600';
+      } else if (bmi < 30) {
+        category = 'Избыточный вес';
+        color = 'text-yellow-600';
+      } else {
+        category = 'Ожирение';
+        color = 'text-red-600';
+      }
+      
+      document.getElementById('bmiResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">ИМТ: ${bmi.toFixed(1)} кг/м²</div>
+          <div class="mt-2 ${color} font-semibold">${category}</div>
+        </div>
+      `;
+    }
+
+    function calculateCreatinine() {
+      const age = parseFloat(document.getElementById('age').value);
+      const weight = parseFloat(document.getElementById('weight').value);
+      const creatinine = parseFloat(document.getElementById('creatinine').value);
+      const gender = document.getElementById('gender').value;
+      
+      if (!age || !weight || !creatinine) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      // Формула Кокрофта-Голта
+      let clearance = ((140 - age) * weight) / (72 * (creatinine / 88.4));
+      if (gender === 'female') {
+        clearance *= 0.85;
+      }
+      
+      let interpretation = '';
+      if (clearance >= 90) {
+        interpretation = 'Нормальная функция почек';
+      } else if (clearance >= 60) {
+        interpretation = 'Легкое снижение функции почек';
+      } else if (clearance >= 30) {
+        interpretation = 'Умеренное снижение функции почек';
+      } else if (clearance >= 15) {
+        interpretation = 'Тяжелое снижение функции почек';
+      } else {
+        interpretation = 'Терминальная почечная недостаточность';
+      }
+      
+      document.getElementById('creatinineResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">Клиренс: ${clearance.toFixed(1)} мл/мин</div>
+          <div class="mt-2">${interpretation}</div>
+        </div>
+      `;
+    }
+
+    function calculateSCORE() {
+      const age = parseFloat(document.getElementById('age').value);
+      const gender = document.getElementById('gender').value;
+      const smoking = document.getElementById('smoking').value;
+      const cholesterol = parseFloat(document.getElementById('cholesterol').value);
+      const systolic = parseFloat(document.getElementById('systolic').value);
+      
+      if (!age || !cholesterol || !systolic) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      // Упрощенный расчет SCORE (для демонстрации)
+      let score = 0;
+      
+      // Возраст
+      if (age >= 65) score += 4;
+      else if (age >= 60) score += 3;
+      else if (age >= 55) score += 2;
+      else if (age >= 50) score += 1;
+      
+      // Пол
+      if (gender === 'male') score += 1;
+      
+      // Курение
+      if (smoking === 'yes') score += 2;
+      
+      // Холестерин
+      if (cholesterol >= 8) score += 3;
+      else if (cholesterol >= 6) score += 2;
+      else if (cholesterol >= 5) score += 1;
+      
+      // АД
+      if (systolic >= 180) score += 3;
+      else if (systolic >= 160) score += 2;
+      else if (systolic >= 140) score += 1;
+      
+      let risk = '';
+      let color = '';
+      
+      if (score <= 2) {
+        risk = 'Низкий риск (<1%)';
+        color = 'text-green-600';
+      } else if (score <= 4) {
+        risk = 'Умеренный риск (1-5%)';
+        color = 'text-yellow-600';
+      } else if (score <= 6) {
+        risk = 'Высокий риск (5-10%)';
+        color = 'text-orange-600';
+      } else {
+        risk = 'Очень высокий риск (>10%)';
+        color = 'text-red-600';
+      }
+      
+      document.getElementById('scoreResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">SCORE: ${score} баллов</div>
+          <div class="mt-2 ${color} font-semibold">${risk}</div>
+          <div class="mt-2 text-sm">10-летний риск смерти от ССЗ</div>
+        </div>
+      `;
+    }
+
+    function calculateBSA() {
+      const height = parseFloat(document.getElementById('height').value);
+      const weight = parseFloat(document.getElementById('weight').value);
+      
+      if (!height || !weight) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      // Формула Дюбуа
+      const bsa = 0.007184 * Math.pow(weight, 0.425) * Math.pow(height, 0.725);
+      
+      document.getElementById('bsaResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">Площадь: ${bsa.toFixed(2)} м²</div>
+          <div class="mt-2">Площадь поверхности тела по формуле Дюбуа</div>
+        </div>
+      `;
+    }
+
+    function calculateDosage() {
+      const weight = parseFloat(document.getElementById('weight').value);
+      const dosePerKg = parseFloat(document.getElementById('dosePerKg').value);
+      const frequency = parseFloat(document.getElementById('frequency').value);
+      
+      if (!weight || !dosePerKg || !frequency) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      const totalDailyDose = weight * dosePerKg;
+      const singleDose = totalDailyDose / frequency;
+      
+      document.getElementById('dosageResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">Суточная доза: ${totalDailyDose.toFixed(1)} мг</div>
+          <div class="mt-2">Разовая доза: ${singleDose.toFixed(1)} мг</div>
+          <div class="mt-2">Кратность: ${frequency} раз в сутки</div>
+        </div>
+      `;
+    }
+
+    function calculateFluid() {
+      const weight = parseFloat(document.getElementById('weight').value);
+      const ageGroup = document.getElementById('ageGroup').value;
+      
+      if (!weight) {
+        alert('Пожалуйста, укажите вес пациента');
+        return;
+      }
+      
+      let fluidPerKg = 30; // мл/кг для взрослых
+      
+      if (ageGroup === 'elderly') {
+        fluidPerKg = 25;
+      } else if (ageGroup === 'child') {
+        fluidPerKg = 50;
+      }
+      
+      const totalFluid = weight * fluidPerKg;
+      
+      document.getElementById('fluidResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-xl font-bold">Суточная потребность: ${totalFluid} мл</div>
+          <div class="mt-2">Это составляет ${(totalFluid/1000).toFixed(1)} литра в сутки</div>
+          <div class="mt-2">Расчет: ${fluidPerKg} мл/кг × ${weight} кг</div>
+        </div>
+      `;
+    }
+
+    function calculatePercentiles() {
+      const age = parseFloat(document.getElementById('childAge').value);
+      const gender = document.getElementById('childGender').value;
+      const height = parseFloat(document.getElementById('childHeight').value);
+      const weight = parseFloat(document.getElementById('childWeight').value);
+      
+      if (!age || !height || !weight) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      // Упрощенный расчет перцентилей (для демонстрации)
+      // В реальности используются таблицы ВОЗ или национальные стандарты
+      let heightPercentile, weightPercentile;
+      
+      if (gender === 'male') {
+        // Примерные значения для мальчиков
+        const expectedHeight = 75 + age * 6; // упрощенная формула
+        const expectedWeight = 3 + age * 3; // упрощенная формула
+        
+        heightPercentile = height > expectedHeight ? 75 : height > expectedHeight * 0.95 ? 50 : 25;
+        weightPercentile = weight > expectedWeight ? 75 : weight > expectedWeight * 0.9 ? 50 : 25;
+      } else {
+        // Примерные значения для девочек
+        const expectedHeight = 74 + age * 5.8;
+        const expectedWeight = 3 + age * 2.8;
+        
+        heightPercentile = height > expectedHeight ? 75 : height > expectedHeight * 0.95 ? 50 : 25;
+        weightPercentile = weight > expectedWeight ? 75 : weight > expectedWeight * 0.9 ? 50 : 25;
+      }
+      
+      let heightInterpretation = '';
+      let weightInterpretation = '';
+      
+      if (heightPercentile >= 75) heightInterpretation = 'Выше среднего';
+      else if (heightPercentile >= 25) heightInterpretation = 'Средний';
+      else heightInterpretation = 'Ниже среднего';
+      
+      if (weightPercentile >= 75) weightInterpretation = 'Выше среднего';
+      else if (weightPercentile >= 25) weightInterpretation = 'Средний';
+      else weightInterpretation = 'Ниже среднего';
+      
+      document.getElementById('percentilesResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">Результаты оценки:</div>
+          <div class="mb-2">Рост: ${heightPercentile}-й перцентиль (${heightInterpretation})</div>
+          <div class="mb-2">Вес: ${weightPercentile}-й перцентиль (${weightInterpretation})</div>
+          <div class="text-sm text-slate-600 mt-2">
+            *Приблизительная оценка. Для точной диагностики используйте стандартные таблицы ВОЗ
+          </div>
+        </div>
+      `;
+    }
+
+    function calculateSDS() {
+      const age = parseFloat(document.getElementById('childAge').value);
+      const gender = document.getElementById('childGender').value;
+      const height = parseFloat(document.getElementById('childHeight').value);
+      const weight = parseFloat(document.getElementById('childWeight').value);
+      
+      if (!age || !height || !weight) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      // Упрощенный расчет SDS (Z-score)
+      let heightSDS, weightSDS;
+      
+      if (gender === 'male') {
+        const meanHeight = 75 + age * 6;
+        const sdHeight = 5;
+        const meanWeight = 3 + age * 3;
+        const sdWeight = 3;
+        
+        heightSDS = (height - meanHeight) / sdHeight;
+        weightSDS = (weight - meanWeight) / sdWeight;
+      } else {
+        const meanHeight = 74 + age * 5.8;
+        const sdHeight = 4.8;
+        const meanWeight = 3 + age * 2.8;
+        const sdWeight = 2.8;
+        
+        heightSDS = (height - meanHeight) / sdHeight;
+        weightSDS = (weight - meanWeight) / sdWeight;
+      }
+      
+      let heightInterpretation = '';
+      let weightInterpretation = '';
+      
+      if (heightSDS > 2) heightInterpretation = 'Значительно выше нормы';
+      else if (heightSDS > 1) heightInterpretation = 'Выше нормы';
+      else if (heightSDS > -1) heightInterpretation = 'Норма';
+      else if (heightSDS > -2) heightInterpretation = 'Ниже нормы';
+      else heightInterpretation = 'Значительно ниже нормы';
+      
+      if (weightSDS > 2) weightInterpretation = 'Значительно выше нормы';
+      else if (weightSDS > 1) weightInterpretation = 'Выше нормы';
+      else if (weightSDS > -1) weightInterpretation = 'Норма';
+      else if (weightSDS > -2) weightInterpretation = 'Ниже нормы';
+      else weightInterpretation = 'Значительно ниже нормы';
+      
+      document.getElementById('sdsResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">SDS (Z-score):</div>
+          <div class="mb-2">Рост: ${heightSDS.toFixed(2)} (${heightInterpretation})</div>
+          <div class="mb-2">Вес: ${weightSDS.toFixed(2)} (${weightInterpretation})</div>
+          <div class="text-sm text-slate-600 mt-2">
+            Норма: от -2 до +2 SDS
+          </div>
+        </div>
+      `;
+    }
+
+    function calculateBoneAge() {
+      const chronologicalAge = parseFloat(document.getElementById('chronologicalAge').value);
+      const boneAge = parseFloat(document.getElementById('boneAge').value);
+      const gender = document.getElementById('childGender').value;
+      
+      if (!chronologicalAge || !boneAge) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      const difference = boneAge - chronologicalAge;
+      const differenceMonths = Math.abs(difference * 12);
+      
+      let interpretation = '';
+      let color = '';
+      
+      if (Math.abs(difference) <= 1) {
+        interpretation = 'Соответствует хронологическому возрасту';
+        color = 'text-green-600';
+      } else if (difference > 1) {
+        interpretation = `Опережение на ${differenceMonths.toFixed(0)} месяцев`;
+        color = 'text-orange-600';
+      } else {
+        interpretation = `Отставание на ${differenceMonths.toFixed(0)} месяцев`;
+        color = 'text-red-600';
+      }
+      
+      document.getElementById('boneAgeResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">Оценка костного возраста:</div>
+          <div class="mb-2">Разница: ${difference.toFixed(1)} лет</div>
+          <div class="mb-2 ${color} font-semibold">${interpretation}</div>
+          <div class="text-sm text-slate-600 mt-2">
+            Норма: разница не более ±1 года
+          </div>
+        </div>
+      `;
+    }
+
+    function calculateHeightPrediction() {
+      const fatherHeight = parseFloat(document.getElementById('fatherHeight').value);
+      const motherHeight = parseFloat(document.getElementById('motherHeight').value);
+      const gender = document.getElementById('childGender').value;
+      
+      if (!fatherHeight || !motherHeight) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      let targetHeight;
+      
+      if (gender === 'male') {
+        // Для мальчиков: (рост отца + рост матери + 13) / 2
+        targetHeight = (fatherHeight + motherHeight + 13) / 2;
+      } else {
+        // Для девочек: (рост отца + рост матери - 13) / 2
+        targetHeight = (fatherHeight + motherHeight - 13) / 2;
+      }
+      
+      const range = 8.5; // стандартное отклонение ±8.5 см
+      const minHeight = targetHeight - range;
+      const maxHeight = targetHeight + range;
+      
+      document.getElementById('heightPredictionResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">Прогноз роста:</div>
+          <div class="mb-2">Целевой рост: ${targetHeight.toFixed(1)} см</div>
+          <div class="mb-2">Диапазон: ${minHeight.toFixed(1)} - ${maxHeight.toFixed(1)} см</div>
+          <div class="text-sm text-slate-600 mt-2">
+            Формула учитывает генетический потенциал родителей
+          </div>
+        </div>
+      `;
+    }
+
+    function calculateTanner() {
+      const age = parseFloat(document.getElementById('childAge').value);
+      const gender = document.getElementById('childGender').value;
+      const stage = parseInt(document.getElementById('tannerStage').value);
+      
+      if (!age || !stage) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      let expectedStage;
+      let interpretation = '';
+      
+      if (gender === 'male') {
+        if (age < 9) expectedStage = 1;
+        else if (age < 11.5) expectedStage = 2;
+        else if (age < 13.5) expectedStage = 3;
+        else if (age < 15.5) expectedStage = 4;
+        else expectedStage = 5;
+      } else {
+        if (age < 8.5) expectedStage = 1;
+        else if (age < 10.5) expectedStage = 2;
+        else if (age < 12.5) expectedStage = 3;
+        else if (age < 14) expectedStage = 4;
+        else expectedStage = 5;
+      }
+      
+      if (stage === expectedStage) {
+        interpretation = 'Соответствует возрасту';
+      } else if (stage > expectedStage) {
+        interpretation = 'Раннее половое развитие';
+      } else {
+        interpretation = 'Задержка полового развития';
+      }
+      
+      const stageDescriptions = {
+        1: 'Препубертатный период',
+        2: 'Начальные признаки полового созревания',
+        3: 'Активная фаза полового созревания',
+        4: 'Поздняя фаза полового созревания',
+        5: 'Завершение полового созревания'
+      };
+      
+      document.getElementById('tannerResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">Оценка полового развития:</div>
+          <div class="mb-2">Стадия Таннера: ${stage}</div>
+          <div class="mb-2">${stageDescriptions[stage]}</div>
+          <div class="mb-2 font-semibold">${interpretation}</div>
+          <div class="text-sm text-slate-600 mt-2">
+            Ожидаемая стадия для возраста: ${expectedStage}
+          </div>
+        </div>
+      `;
+    }
+
+    function calculateInsulin() {
+      const weight = parseFloat(document.getElementById('childWeight').value);
+      const age = parseFloat(document.getElementById('childAge').value);
+      const stage = document.getElementById('diabetesStage').value;
+      
+      if (!weight || !age) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+      }
+      
+      let doseRange = '';
+      let minDose, maxDose;
+      
+      switch(stage) {
+        case 'honeymoon':
+          minDose = weight * 0.3;
+          maxDose = weight * 0.5;
+          doseRange = '0.3-0.5 ЕД/кг';
+          break;
+        case 'prepubertal':
+          minDose = weight * 0.7;
+          maxDose = weight * 1.0;
+          doseRange = '0.7-1.0 ЕД/кг';
+          break;
+        case 'pubertal':
+          minDose = weight * 1.0;
+          maxDose = weight * 1.2;
+          doseRange = '1.0-1.2 ЕД/кг';
+          break;
+        case 'postpubertal':
+          minDose = weight * 0.8;
+          maxDose = weight * 1.0;
+          doseRange = '0.8-1.0 ЕД/кг';
+          break;
+      }
+      
+      const basalDose = (minDose + maxDose) / 2 * 0.5; // 50% на базальный инсулин
+      const bolusDose = (minDose + maxDose) / 2 * 0.5; // 50% на болюсный инсулин
+      
+      document.getElementById('insulinResult').innerHTML = `
+        <div class="result-highlight">
+          <div class="text-lg font-bold mb-2">Расчет дозы инсулина:</div>
+          <div class="mb-2">Суточная доза: ${minDose.toFixed(1)}-${maxDose.toFixed(1)} ЕД</div>
+          <div class="mb-2">Базальный инсулин: ~${basalDose.toFixed(1)} ЕД</div>
+          <div class="mb-2">Болюсный инсулин: ~${bolusDose.toFixed(1)} ЕД</div>
+          <div class="text-sm text-slate-600 mt-2">
+            Расчет: ${doseRange} × ${weight} кг<br>
+            *Требует индивидуальной коррекции врачом
+          </div>
+        </div>
+      `;
+    }
+
+    // Закрытие модального окна при клике вне его
+    document.getElementById('calculatorModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeCalculator();
+      }
+    });
+  </script>
+</body>
+</html>

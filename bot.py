@@ -8,12 +8,13 @@ from typing import Dict, List, TextIO
 import fitz
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+import pandas as pd
 
 import ollama  # pip install ollama
 
 # ---------- CONSTANTS ----------
 OLLAMA_MODEL: str = "hf.co/unsloth/Magistral-Small-2506-GGUF:Q6_K"          # сначала «ollama pull <n>»
-# SERVICES_FILE: Path = Path("docs/services.xlsx")  # Не используется, услуги генерируются через ИИ
+SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услугами
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 MAX_INPUT_TOK: int = 8_000
@@ -51,6 +52,32 @@ class MedicalAssistant:
         # Убираем индексацию услуг, так как они генерируются через ИИ
         # self.embeddings = self._lazy_embedder()
         # self.db = self._load_or_build_index()
+        
+        # Загружаем услуги из Excel файла
+        self.services_df = self._load_services_from_excel()
+
+    def _load_services_from_excel(self) -> pd.DataFrame:
+        """Загружает услуги из Excel файла"""
+        try:
+            if not SERVICES_FILE.exists():
+                print(f"❌ Файл с услугами не найден: {SERVICES_FILE}")
+                return pd.DataFrame(columns=['Название', 'ID'])
+            
+            # Читаем Excel файл
+            df = pd.read_excel(SERVICES_FILE, sheet_name='iblock_element_admin (1)')
+            
+            # Переименовываем колонки для удобства
+            df.columns = ['Название', 'ID']
+            
+            # Убираем пустые строки
+            df = df.dropna(subset=['Название'])
+            
+            print(f"✅ Загружено {len(df)} услуг из Excel файла")
+            return df
+            
+        except Exception as e:
+            print(f"❌ Ошибка загрузки услуг из Excel: {e}")
+            return pd.DataFrame(columns=['Название', 'ID'])
 
 
 
@@ -458,72 +485,91 @@ class MedicalAssistant:
         except Exception as e:
             print("\n❌ Ошибка при вызове Ollama:", e)
 
-    # ---------- SERVICES GENERATION ----------
+    # ---------- SERVICES SELECTION ----------
     def generate_services_for_step(self, step_text: str, step_title: str = "") -> List[Dict[str, str]]:
-        """Генерирует предложения услуг для конкретного этапа алгоритма"""
+        """Находит подходящие услуги из Excel файла для конкретного этапа алгоритма"""
         
-        system_prompt = """Ты — медицинский ассистент, который предлагает конкретные медицинские услуги для записи.
-
-На основе описания этапа медицинского алгоритма предложи 3-5 конкретных услуг, на которые пациент может записаться.
-
-Для каждой услуги укажи:
-- Название услуги (краткое и понятное)
-- Описание (что включает услуга)
-- Когда нужна (показания)
-
-Отвечай ТОЛЬКО в формате JSON массива:
-[
-  {
-    "name": "Название услуги",
-    "description": "Подробное описание услуги",
-    "indications": "Когда нужна эта услуга"
-  }
-]
-
-Предлагай только реальные медицинские услуги: консультации, анализы, исследования, процедуры."""
-
-        user_prompt = f"""Этап алгоритма: {step_title}
-
-Описание этапа:
-{step_text}
-
-Предложи услуги для этого этапа."""
-
-        try:
-            response = ollama.chat(
-                model=OLLAMA_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                options={
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "num_predict": 1000
-                }
-            )
-            
-            response_text = response["message"]["content"].strip()
-            
-            # Пытаемся извлечь JSON из ответа
-            import json
-            import re
-            
-            # Ищем JSON массив в ответе
-            json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
-            if json_match:
-                try:
-                    services = json.loads(json_match.group())
-                    return services if isinstance(services, list) else []
-                except json.JSONDecodeError:
-                    pass
-            
-            # Если JSON не найден, возвращаем пустой список
+        if self.services_df.empty:
+            print("❌ Услуги не загружены из Excel файла")
             return []
+        
+        # Объединяем заголовок и текст для поиска
+        search_text = f"{step_title} {step_text}".lower()
+        
+        # Ключевые слова для поиска услуг
+        keywords_map = {
+            # Консультации
+            'консультация': ['консультация'],
+            'врач': ['консультация'],
+            'специалист': ['консультация'],
             
-        except Exception as e:
-            print(f"Ошибка генерации услуг: {e}")
-            return []
+            # Анализы
+            'анализ': ['анализ', 'исследование'],
+            'кровь': ['анализ', 'исследование'],
+            'моча': ['анализ', 'исследование'],
+            'биохимия': ['анализ', 'исследование'],
+            'микробиологическое': ['микробиологическое'],
+            
+            # УЗИ и диагностика
+            'узи': ['узи', 'ультразвуковое'],
+            'ультразвуковое': ['ультразвуковое', 'узи'],
+            'рентген': ['рентген'],
+            'томография': ['томография'],
+            'эндоскопия': ['скопия'],
+            
+            # Хирургия
+            'операция': ['операция', 'удаление', 'иссечение'],
+            'хирургия': ['операция', 'удаление', 'иссечение'],
+            'удаление': ['удаление', 'иссечение'],
+            'лапароскопия': ['лапароскопическ'],
+            
+            # Процедуры
+            'блокада': ['блокада'],
+            'пункция': ['пункция'],
+            'биопсия': ['биопсия'],
+            'терапия': ['терапия'],
+            'лечение': ['лечение'],
+        }
+        
+        # Находим релевантные услуги
+        relevant_services = []
+        
+        for keyword, search_terms in keywords_map.items():
+            if keyword in search_text:
+                for term in search_terms:
+                    # Ищем услуги, содержащие термин
+                    matching_services = self.services_df[
+                        self.services_df['Название'].str.lower().str.contains(term, na=False)
+                    ]
+                    
+                    for _, service in matching_services.head(2).iterrows():  # Берем максимум 2 услуги на термин
+                        service_dict = {
+                            "name": service['Название'],
+                            "description": f"Медицинская услуга (ID: {service['ID']})",
+                            "indications": f"Рекомендуется для этапа: {step_title}",
+                            "service_id": str(service['ID'])
+                        }
+                        
+                        # Избегаем дублирования
+                        if not any(s['name'] == service_dict['name'] for s in relevant_services):
+                            relevant_services.append(service_dict)
+        
+        # Если не найдено специфических услуг, добавляем общие консультации
+        if not relevant_services:
+            consultation_services = self.services_df[
+                self.services_df['Название'].str.lower().str.contains('консультация', na=False)
+            ]
+            
+            for _, service in consultation_services.head(3).iterrows():
+                relevant_services.append({
+                    "name": service['Название'],
+                    "description": f"Медицинская услуга (ID: {service['ID']})",
+                    "indications": f"Общая консультация для этапа: {step_title}",
+                    "service_id": str(service['ID'])
+                })
+        
+        # Ограничиваем количество услуг
+        return relevant_services[:5]
 
     # ---------- DIALOGUE ----------
     def _generate_dialogue_streaming(self, user_message: str, conversation_history: List[Dict], sections: Dict[str, str], file: TextIO) -> None:
