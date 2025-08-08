@@ -574,10 +574,13 @@ class MedicalAssistant:
     # ---------- DIALOGUE ----------
     def _generate_dialogue_streaming(self, user_message: str, conversation_history: List[Dict], sections: Dict[str, str], file: TextIO) -> None:
         """Генерирует ответ в диалоговом режиме с учетом истории разговора"""
+        print(f"DEBUG: Начинаем генерацию диалога для сообщения: {user_message[:100]}...")
+        
         content = sections.get("guidelines", "")
         content = self._trim_tokens(content, MAX_INPUT_TOK)
 
         system_prompt = (
+             "ВАЖНО: ГЕНЕРИРУЙ ТЕКСТ ТОЛЬКО на русском языке! "
             "Ты — русскоязычный медицинский ассистент в диалоговом режиме. "
             "ВАЖНО: Отвечай ТОЛЬКО на русском языке! "
             "Твой единственный источник информации — клинические рекомендации от пользователя. "
@@ -608,6 +611,20 @@ class MedicalAssistant:
         messages.append({"role": "user", "content": user_message})
 
         try:
+            print(f"DEBUG: Проверяем подключение к Ollama...")
+            
+            # Проверяем, что Ollama доступен
+            try:
+                ollama.list()
+                print("DEBUG: Ollama доступен")
+            except Exception as e:
+                print(f"DEBUG: Ollama недоступен: {e}")
+                error_msg = "❌ Ошибка: Ollama не запущен или недоступен. Пожалуйста, запустите Ollama и убедитесь, что модель загружена."
+                file.write(error_msg)
+                return
+            
+            print(f"DEBUG: Отправляем запрос к модели {OLLAMA_MODEL}...")
+            
             stream = ollama.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
@@ -620,12 +637,31 @@ class MedicalAssistant:
                     "system": "Отвечай только на русском языке!"
                 }
             )
+            
+            print("DEBUG: Получаем ответ от модели...")
+            token_count = 0
+            
             for chunk in stream:
                 token = chunk["message"]["content"]
                 file.write(token)
                 print(token, end="", flush=True)
+                token_count += 1
+                
+            print(f"\nDEBUG: Получено {token_count} токенов")
+            
         except Exception as e:
-            print("\n❌ Ошибка при вызове Ollama:", e)
+            error_msg = f"❌ Ошибка при вызове Ollama: {str(e)}"
+            print(f"\nDEBUG: {error_msg}")
+            
+            # Проверяем конкретные типы ошибок
+            if "Connection refused" in str(e) or "connection" in str(e).lower():
+                error_msg = "❌ Ошибка подключения к Ollama. Убедитесь, что Ollama запущен (команда: ollama serve)"
+            elif "model" in str(e).lower():
+                error_msg = f"❌ Ошибка модели. Убедитесь, что модель {OLLAMA_MODEL} загружена (команда: ollama pull {OLLAMA_MODEL})"
+            elif "tunnel" in str(e).lower():
+                error_msg = "❌ Ошибка туннелирования. Проверьте настройки сети и доступность Ollama"
+            
+            file.write(error_msg)
 
     # ---------- RUN ----------
     def run(self):

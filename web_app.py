@@ -106,66 +106,81 @@ dialogue_sessions = {}
 
 @app.post("/dialogue")
 async def dialogue(request: Request) -> StreamingResponse:
-    body = await request.json()
-    session_id = body.get("session_id", "default")
-    user_message = body.get("message", "").strip()
-    
-    if not user_message:
-        async def error_stream():
-            yield f"data: {json.dumps('❌ Пустое сообщение')}\n\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
-    
-    # Получаем или создаем сессию диалога
-    if session_id not in dialogue_sessions:
-        async def error_stream():
-            yield f"data: {json.dumps('❌ Сессия не найдена. Сначала загрузите PDF.')}\n\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
-    
-    session = dialogue_sessions[session_id]
-    sections = session["sections"]
-    conversation_history = session.get("history", [])
-    
-    async def dialogue_stream() -> AsyncGenerator[str, None]:
-        q = asyncio.Queue()
-        writer = AsyncStreamWriter(q)
+    try:
+        body = await request.json()
+        session_id = body.get("session_id", "default")
+        user_message = body.get("message", "").strip()
+        
+        print(f"DEBUG: Получен запрос диалога для сессии {session_id}: {user_message[:100]}...")
+        
+        if not user_message:
+            async def error_stream():
+                yield f"data: {json.dumps('❌ Пустое сообщение')}\n\n"
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
+        
+        # Получаем или создаем сессию диалога
+        if session_id not in dialogue_sessions:
+            async def error_stream():
+                yield f"data: {json.dumps('❌ Сессия не найдена. Сначала загрузите PDF.')}\n\n"
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
+        
+        session = dialogue_sessions[session_id]
+        sections = session["sections"]
+        conversation_history = session.get("history", [])
+        
+        async def dialogue_stream() -> AsyncGenerator[str, None]:
+            q = asyncio.Queue()
+            writer = AsyncStreamWriter(q)
 
-        # Запускаем генерацию диалога в фоне
-        loop = asyncio.get_running_loop()
-        task = loop.run_in_executor(
-            None, 
-            assistant._generate_dialogue_streaming, 
-            user_message, 
-            conversation_history, 
-            sections, 
-            writer
-        )
-
-        response_text = ""
-        while True:
             try:
-                chunk = await q.get()
-                if chunk == "":
-                    break
-                response_text += chunk
-                # Отправляем как SSE
-                yield f"data: {json.dumps(chunk)}\n\n"
+                # Запускаем генерацию диалога в фоне
+                loop = asyncio.get_running_loop()
+                task = loop.run_in_executor(
+                    None, 
+                    assistant._generate_dialogue_streaming, 
+                    user_message, 
+                    conversation_history, 
+                    sections, 
+                    writer
+                )
+
+                response_text = ""
+                while True:
+                    try:
+                        chunk = await q.get()
+                        if chunk == "":
+                            break
+                        response_text += chunk
+                        # Отправляем как SSE
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    except Exception as e:
+                        print(f"DEBUG: Ошибка в потоке диалога: {e}")
+                        yield f"data: {json.dumps(f'❌ Ошибка: {str(e)}')}\n\n"
+                        break
+
+                await task
+                
+                # Сохраняем историю диалога
+                conversation_history.append({"role": "user", "content": user_message})
+                conversation_history.append({"role": "assistant", "content": response_text})
+                
+                # Ограничиваем историю последними 10 сообщениями
+                if len(conversation_history) > 10:
+                    conversation_history = conversation_history[-10:]
+                
+                session["history"] = conversation_history
+                
             except Exception as e:
-                print("Error in dialogue stream:", e)
-                break
+                print(f"DEBUG: Критическая ошибка в диалоге: {e}")
+                yield f"data: {json.dumps(f'❌ Критическая ошибка: {str(e)}')}\n\n"
 
-        await task
+        return StreamingResponse(dialogue_stream(), media_type="text/event-stream")
         
-        # Сохраняем историю диалога
-        conversation_history.append({"role": "user", "content": user_message})
-        conversation_history.append({"role": "assistant", "content": response_text})
-        
-        # Ограничиваем историю последними 10 сообщениями
-        if len(conversation_history) > 10:
-            conversation_history = conversation_history[-10:]
-        
-        session["history"] = conversation_history
-
-    return StreamingResponse(dialogue_stream(), media_type="text/event-stream")
+    except Exception as e:
+        print(f"DEBUG: Ошибка обработки запроса диалога: {e}")
+        async def error_stream():
+            yield f"data: {json.dumps(f'❌ Ошибка обработки запроса: {str(e)}')}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
 
 
 @app.post("/start_dialogue")
@@ -319,34 +334,49 @@ async def start_dialogue_sample() -> Response:
 @app.post("/generate_services")
 async def generate_services(request: Request) -> Response:
     """Генерирует предложения услуг для этапа алгоритма"""
-    body = await request.json()
-    step_text = body.get("step_text", "").strip()
-    step_title = body.get("step_title", "").strip()
-    
-    if not step_text:
-        return Response(
-            content=json.dumps({"error": "Не указан текст этапа"}),
-            media_type="application/json",
-            status_code=400
-        )
-    
     try:
+        body = await request.json()
+        step_text = body.get("step_text", "").strip()
+        step_title = body.get("step_title", "").strip()
+        
+        print(f"DEBUG: Получен запрос на генерацию услуг для '{step_title}'")
+        print(f"DEBUG: Текст этапа: {step_text[:200]}...")
+        
+        if not step_text:
+            return Response(
+                content=json.dumps({"error": "Не указан текст этапа"}, ensure_ascii=False),
+                media_type="application/json",
+                status_code=400
+            )
+        
         # Генерируем услуги через ИИ
         services = await asyncio.get_running_loop().run_in_executor(
             None, assistant.generate_services_for_step, step_text, step_title
         )
         
+        print(f"DEBUG: Найдено услуг: {len(services)}")
+        
+        response_data = {
+            "services": services,
+            "step_title": step_title
+        }
+        
         return Response(
-            content=json.dumps({
-                "services": services,
-                "step_title": step_title
-            }),
+            content=json.dumps(response_data, ensure_ascii=False),
             media_type="application/json"
         )
         
-    except Exception as e:
+    except json.JSONDecodeError as e:
+        print(f"DEBUG: Ошибка парсинга JSON: {str(e)}")
         return Response(
-            content=json.dumps({"error": f"Ошибка генерации услуг: {str(e)}"}),
+            content=json.dumps({"error": "Неверный формат JSON"}, ensure_ascii=False),
+            media_type="application/json",
+            status_code=400
+        )
+    except Exception as e:
+        print(f"DEBUG: Ошибка генерации услуг: {str(e)}")
+        return Response(
+            content=json.dumps({"error": f"Ошибка генерации услуг: {str(e)}"}, ensure_ascii=False),
             media_type="application/json",
             status_code=500
         )

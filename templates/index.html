@@ -853,7 +853,10 @@
       console.log('Отправляем запрос на /generate_services');
       const response = await fetch('/generate_services', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           step_title: stepTitle,
           step_text: stepContent
@@ -861,11 +864,28 @@
       });
       
       console.log('Ответ получен, статус:', response.status);
+      console.log('Content-Type ответа:', response.headers.get('content-type'));
       
-      const data = await response.json();
+      // Проверяем, что ответ действительно JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('Получен не-JSON ответ:', textResponse);
+        throw new Error('Сервер вернул некорректный формат данных');
+      }
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Ошибка парсинга JSON:', jsonError);
+        const textResponse = await response.text();
+        console.error('Текст ответа:', textResponse);
+        throw new Error('Ошибка обработки ответа сервера (некорректный JSON)');
+      }
       
       if (!response.ok) {
-        throw new Error(data.error || 'Ошибка генерации услуг');
+        throw new Error(data.error || `Ошибка сервера: ${response.status}`);
       }
       
       if (data.services && data.services.length > 0) {
@@ -876,7 +896,11 @@
       
     } catch (error) {
       console.error('Ошибка генерации услуг:', error);
-      alert('Ошибка генерации услуг: ' + error.message);
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        alert('Ошибка соединения с сервером. Проверьте подключение.');
+      } else {
+        alert('Ошибка генерации услуг: ' + error.message);
+      }
     } finally {
       button.disabled = false;
       button.innerHTML = originalText;
