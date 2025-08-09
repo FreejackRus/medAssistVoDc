@@ -106,6 +106,11 @@ dialogue_sessions = {}
 
 @app.post("/dialogue")
 async def dialogue(request: Request) -> StreamingResponse:
+    # Инициализируем переменные заранее
+    conversation_history = []
+    session = None
+    sections = []
+    
     try:
         body = await request.json()
         session_id = body.get("session_id", "default")
@@ -173,6 +178,12 @@ async def dialogue(request: Request) -> StreamingResponse:
             except Exception as e:
                 print(f"DEBUG: Критическая ошибка в диалоге: {e}")
                 yield f"data: {json.dumps(f'❌ Критическая ошибка: {str(e)}')}\n\n"
+                
+                # Сохраняем сообщение пользователя в историю даже при ошибке
+                if session and user_message:
+                    conversation_history.append({"role": "user", "content": user_message})
+                    conversation_history.append({"role": "assistant", "content": f"❌ Ошибка: {str(e)}"})
+                    session["history"] = conversation_history
 
         return StreamingResponse(dialogue_stream(), media_type="text/event-stream")
         
@@ -264,18 +275,24 @@ async def use_sample_pdf() -> Response:
             "diagnosis": assistant.diagnosis_name
         }
         
+        # Формируем результат для отображения (как в upload_pdf)
+        result_markdown = f"# {assistant.diagnosis_name}\n\n"
+        for section in sections:
+            result_markdown += f"## {section['title']}\n\n{section['content']}\n\n"
+        
         return Response(
             content=json.dumps({
                 "session_id": session_id,
                 "diagnosis": assistant.diagnosis_name,
+                "result": result_markdown,
                 "message": "Диалоговая сессия создана с образцом клинических рекомендаций. Теперь вы можете задавать вопросы."
-            }),
+            }, ensure_ascii=False),
             media_type="application/json"
         )
         
     except Exception as e:
         return Response(
-            content=json.dumps({"error": f"Ошибка обработки образца PDF: {str(e)}"}),
+            content=json.dumps({"error": f"Ошибка обработки образца PDF: {str(e)}"}, ensure_ascii=False),
             media_type="application/json",
             status_code=500
         )
