@@ -13,11 +13,11 @@ import pandas as pd
 import ollama  # pip install ollama
 
 # ---------- CONSTANTS ----------
-OLLAMA_MODEL: str = "hf.co/openai/gpt-oss-20b"          # сначала «ollama pull <n>»
+OLLAMA_MODEL: str = "gpt-oss:20b"          # OpenAI GPT-OSS-20B модель
 SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услугами
-CHUNK_SIZE: int = 1_000
-CHUNK_OVERLAP: int = 200
-MAX_INPUT_TOK: int = 135_000
+CHUNK_SIZE: int = 2_000  # Увеличиваем для GPT-OSS
+CHUNK_OVERLAP: int = 400  # Увеличиваем overlap
+MAX_INPUT_TOK: int = 200_000  # GPT-OSS поддерживает больший контекст
 # Улучшенные паттерны для распознавания структуры
 SECTION_PATTERNS = [
     re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
