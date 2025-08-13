@@ -10,6 +10,21 @@ langchain-community>=0.2.0
 langchain-huggingface          # новый пакет для HuggingFaceEmbeddings
 pypdf>=3.17.0
 
+# --- Web Framework ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# --- PDF Processing ---
+PyMuPDF>=1.23.0
+reportlab>=4.0.0
+markdown>=3.5.0
+
+# --- Ollama ---
+ollama>=0.1.7
+
+# --- HTTP Client ---
+httpx
 
 # --- Data ---
 pandas>=2.1.0

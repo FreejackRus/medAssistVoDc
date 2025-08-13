@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Диалог с ИИ - Медицинский Ассистент</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 2rem;
+        }
+
+        .chat-messages {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            overflow-y: auto;
+            max-height: 70vh;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .message {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border-radius: 12px;
+            max-width: 80%;
+        }
+
+        .message.user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+        }
+
+        .message.assistant {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+        }
+
+        .message.system {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            font-style: italic;
+            opacity: 0.8;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 1rem;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 1.5rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .chat-input button {
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .chat-input button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 1rem;
+            color: #6c757d;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .recommendation-info {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            border-left: 4px solid #667eea;
+        }
+
+        .recommendation-info h3 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .recommendation-info p {
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .back-btn {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.9);
+            color: #667eea;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Диалог с ИИ - Анализ клинических рекомендаций</h1>
+    </div>
+
+    <a href="/clinical-recommendations" class="back-btn">← Назад к рекомендациям</a>
+
+    <div class="chat-container">
+        <div id="recommendationInfo" class="recommendation-info" style="display: none;">
+            <h3 id="recTitle"></h3>
+            <p><strong>Организация:</strong> <span id="recOrg"></span></p>
+            <p><strong>Код МКБ:</strong> <span id="recMkb"></span></p>
+            <p id="recDesc"></p>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="message system">
+                🔄 Инициализация диалога с ИИ...
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            ИИ анализирует рекомендации и генерирует ответ...
+        </div>
+
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Введите ваш вопрос..." disabled>
+            <button id="sendBtn" onclick="sendMessage()" disabled>Отправить</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let isGenerating = false;
+
+        // Получаем session_id из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        sessionId = urlParams.get('session_id');
+
+        if (!sessionId) {
+            alert('Ошибка: ID сессии не найден');
+            window.location.href = '/clinical-recommendations';
+        }
+
+        // Инициализация чата
+        async function initChat() {
+            try {
+                // Получаем информацию о сессии
+                const response = await fetch(`/api/session-info?session_id=${sessionId}`);
+                if (response.ok) {
+                    const sessionData = await response.json();
+                    if (sessionData.recommendation_data) {
+                        displayRecommendationInfo(sessionData.recommendation_data);
+                    }
+                }
+
+                // Автоматически отправляем первое сообщение для генерации алгоритма
+                await sendInitialMessage();
+                
+            } catch (error) {
+                console.error('Ошибка инициализации:', error);
+                addMessage('system', '❌ Ошибка инициализации чата');
+            }
+        }
+
+        // Отображение информации о рекомендации
+        function displayRecommendationInfo(data) {
+            document.getElementById('recTitle').textContent = data.title || 'Без названия';
+            document.getElementById('recOrg').textContent = data.organization || 'Минздрав РФ';
+            document.getElementById('recMkb').textContent = data.mkb_code || 'Не указан';
+            document.getElementById('recDesc').textContent = data.description || 'Описание отсутствует';
+            document.getElementById('recommendationInfo').style.display = 'block';
+        }
+
+        // Отправка начального сообщения
+        async function sendInitialMessage() {
+            const initialMessage = "Создайте диагностический алгоритм на основе предоставленной клинической рекомендации";
+            await sendMessageToAI(initialMessage, true);
+        }
+
+        // Отправка сообщения
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isGenerating) return;
+            
+            input.value = '';
+            await sendMessageToAI(message, false);
+        }
+
+        // Отправка сообщения ИИ
+        async function sendMessageToAI(message, isInitial = false) {
+            if (!isInitial) {
+                addMessage('user', message);
+            }
+            
+            setGenerating(true);
+            
+            try {
+                const response = await fetch('/dialogue', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: message
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+                let messageElement = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (typeof data === 'string') {
+                                    assistantMessage += data;
+                                    
+                                    if (!messageElement) {
+                                        messageElement = addMessage('assistant', '');
+                                    }
+                                    
+                                    messageElement.innerHTML = formatMessage(assistantMessage);
+                                    scrollToBottom();
+                                }
+                            } catch (e) {
+                                console.error('Ошибка парсинга JSON:', e);
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                console.error('Ошибка отправки сообщения:', error);
+                addMessage('system', '❌ Ошибка при отправке сообщения: ' + error.message);
+            } finally {
+                setGenerating(false);
+            }
+        }
+
+        // Добавление сообщения в чат
+        function addMessage(type, content) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = formatMessage(content);
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+            return messageDiv;
+        }
+
+        // Форматирование сообщения
+        function formatMessage(content) {
+            // Простое форматирование markdown
+            return content
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // Прокрутка к низу
+        function scrollToBottom() {
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Управление состоянием генерации
+        function setGenerating(generating) {
+            isGenerating = generating;
+            const sendBtn = document.getElementById('sendBtn');
+            const messageInput = document.getElementById('messageInput');
+            const loading = document.getElementById('loading');
+            
+            sendBtn.disabled = generating;
+            messageInput.disabled = generating;
+            loading.style.display = generating ? 'block' : 'none';
+            
+            if (generating) {
+                sendBtn.textContent = 'Генерация...';
+            } else {
+                sendBtn.textContent = 'Отправить';
+                messageInput.focus();
+            }
+        }
+
+        // Обработчик Enter
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !isGenerating) {
+                sendMessage();
+            }
+        });
+
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', initChat);
+    </script>
+</body>
+</html>

@@ -4,9 +4,11 @@ import json
 import os
 import tempfile
 import textwrap
+import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 from urllib.parse import quote
+import httpx
 
 import markdown
 from reportlab.lib.pagesizes import letter, A4
@@ -33,6 +35,16 @@ def index():
 @app.get("/calculators", response_class=HTMLResponse)
 def calculators():
     return HTMLResponse((templates_dir / "calculators.html").read_text(encoding="utf-8"))
+
+
+@app.get("/clinical-recommendations", response_class=HTMLResponse)
+def clinical_recommendations():
+    return HTMLResponse((templates_dir / "clinical_recommendations.html").read_text(encoding="utf-8"))
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat():
+    return HTMLResponse((templates_dir / "index.html").read_text(encoding="utf-8"))
 
 
 # ---------- SSE Stream Writer ----------
@@ -104,6 +116,31 @@ async def generate(pdf: UploadFile = File(...)) -> StreamingResponse:
 # Глобальное хранилище для диалогов (в продакшене лучше использовать Redis или базу данных)
 dialogue_sessions = {}
 
+async def download_pdf_from_url(url: str) -> str:
+    """Загружает PDF файл по URL и возвращает путь к временному файлу"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            
+            # Создаем временный файл
+            tmp_dir = Path("tmp")
+            tmp_dir.mkdir(exist_ok=True, parents=True)
+            
+            # Генерируем уникальное имя файла
+            tmp_filename = f"clinical_rec_{uuid.uuid4().hex[:8]}.pdf"
+            tmp_path = tmp_dir / tmp_filename
+            
+            # Сохраняем PDF
+            tmp_path.write_bytes(response.content)
+            print(f"DEBUG: PDF загружен и сохранен в {tmp_path}")
+            
+            return str(tmp_path)
+            
+    except Exception as e:
+        print(f"ERROR: Ошибка загрузки PDF по URL {url}: {str(e)}")
+        raise
+
 @app.post("/dialogue")
 async def dialogue(request: Request) -> StreamingResponse:
     # Инициализируем переменные заранее
@@ -130,8 +167,57 @@ async def dialogue(request: Request) -> StreamingResponse:
             return StreamingResponse(error_stream(), media_type="text/event-stream")
         
         session = dialogue_sessions[session_id]
-        sections = session["sections"]
-        conversation_history = session.get("history", [])
+        
+        # Проверяем тип сессии
+        if "sections" in session:
+            # Обычная сессия с PDF
+            sections = session["sections"]
+        elif "initial_message" in session:
+            # Сессия из клинических рекомендаций
+            # Проверяем, загружен ли уже PDF
+            if "sections" not in session or not session.get("sections"):
+                # Загружаем PDF по URL
+                recommendation_data = session.get("recommendation_data", {})
+                pdf_url = recommendation_data.get("pdf_url")
+                
+                if pdf_url:
+                    try:
+                        print(f"DEBUG: Загружаем PDF по URL: {pdf_url}")
+                        pdf_path = await download_pdf_from_url(pdf_url)
+                        
+                        # Обрабатываем PDF
+                        sections = await asyncio.get_running_loop().run_in_executor(
+                            None, assistant.load_guidelines, pdf_path
+                        )
+                        
+                        if sections:
+                            session["sections"] = sections
+                            print(f"DEBUG: PDF успешно обработан, найдено {len(sections)} секций")
+                        else:
+                            print("WARNING: Не удалось извлечь секции из PDF")
+                            sections = []
+                        
+                        # Удаляем временный файл
+                        Path(pdf_path).unlink(missing_ok=True)
+                        
+                    except Exception as e:
+                        print(f"ERROR: Ошибка загрузки/обработки PDF: {str(e)}")
+                        sections = []
+                else:
+                    sections = []
+            else:
+                sections = session.get("sections", [])
+            
+            # Если это первое сообщение, добавляем начальное сообщение
+            if not session.get("messages"):
+                session["messages"] = [{"role": "system", "content": session["initial_message"]}]
+        else:
+            # Неизвестный тип сессии
+            async def error_stream():
+                yield f"data: {json.dumps('❌ Неизвестный тип сессии.')}\n\n"
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
+        
+        conversation_history = session.get("history", session.get("messages", []))
         
         async def dialogue_stream() -> AsyncGenerator[str, None]:
             q = asyncio.Queue()
@@ -173,7 +259,11 @@ async def dialogue(request: Request) -> StreamingResponse:
                 if len(conversation_history) > 10:
                     conversation_history = conversation_history[-10:]
                 
-                session["history"] = conversation_history
+                # Сохраняем в правильное поле в зависимости от типа сессии
+                if "sections" in session:
+                    session["history"] = conversation_history
+                else:
+                    session["messages"] = conversation_history
                 
             except Exception as e:
                 print(f"DEBUG: Критическая ошибка в диалоге: {e}")
@@ -183,7 +273,11 @@ async def dialogue(request: Request) -> StreamingResponse:
                 if session and user_message:
                     conversation_history.append({"role": "user", "content": user_message})
                     conversation_history.append({"role": "assistant", "content": f"❌ Ошибка: {str(e)}"})
-                    session["history"] = conversation_history
+                    # Сохраняем в правильное поле в зависимости от типа сессии
+                    if "sections" in session:
+                        session["history"] = conversation_history
+                    else:
+                        session["messages"] = conversation_history
 
         return StreamingResponse(dialogue_stream(), media_type="text/event-stream")
         
@@ -379,6 +473,220 @@ async def start_dialogue_sample() -> Response:
     except Exception as e:
         return Response(
             content=json.dumps({"error": f"Ошибка инициализации диалога: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
+
+
+@app.get("/api/clinical-recommendations")
+async def get_clinical_recommendations():
+    """
+    Получение клинических рекомендаций из API Минздрава РФ
+    """
+    try:
+        # URL API Минздрава
+        api_url = "https://apicr.minzdrav.gov.ru/api.ashx?op=GetJsonClinrecsFilterV2"
+        
+        # Payload для запроса всех активных клинических рекомендаций
+        payload = {
+            "filters": [
+                {
+                    "fieldName": "status",
+                    "filterType": 1,
+                    "filterValueType": 2,
+                    "value1": 0,  # Активные рекомендации
+                    "value2": "",
+                    "values": []
+                }
+            ],
+            "sortOption": {
+                "fieldName": "publishdate",
+                "sortType": 2  # По убыванию (новые сначала)
+            },
+            "pageSize": 999999,
+            "currentPage": 1,
+            "useANDoperator": True,
+            "columns": []
+        }
+        
+        print(f"DEBUG: Отправляем запрос к {api_url}")
+        print(f"DEBUG: Payload: {json.dumps(payload, ensure_ascii=False)}")
+        
+        # Выполняем запрос к API
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                api_url,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+            )
+            
+            print(f"DEBUG: Статус ответа: {response.status_code}")
+            print(f"DEBUG: Заголовки ответа: {dict(response.headers)}")
+            
+            if response.status_code != 200:
+                error_text = response.text
+                print(f"DEBUG: Ошибка API: {error_text}")
+                return Response(
+                    content=json.dumps({"error": f"API request failed: {error_text}"}),
+                    media_type="application/json",
+                    status_code=response.status_code
+                )
+            
+            data = response.json()
+            print(f"DEBUG: Получен ответ: {json.dumps(data, ensure_ascii=False)[:500]}...")
+            
+            # Обработка ответа
+            recommendations = []
+            if "Data" in data and isinstance(data["Data"], list):
+                print(f"DEBUG: Найдено {len(data['Data'])} записей в Data")
+                for item in data["Data"]:
+                    # Преобразуем данные в удобный формат
+                    rec = {
+                        "id": item.get("CodeVersion", item.get("Id", item.get("id", ""))),
+                        "title": item.get("Name", item.get("title", "")),
+                        "description": item.get("Description", item.get("description", "")),
+                        "annotation": item.get("Annotation", item.get("annotation", "")),
+                        "publishdate": item.get("PublishDateStr", item.get("publishdate", "")),
+                        "status": item.get("Status", item.get("status", 0)),
+                        "organization": "Минздрав РФ",
+                        "mkb_code": item.get("Mkbs", [{}])[0].get("MkbCode", "") if item.get("Mkbs") else item.get("Code", item.get("mkb_code", "")),
+                        "category": item.get("Category", item.get("category", "")),
+                        "age_group": item.get("AgeCategoryStr", item.get("age_group", "")),
+                        "keywords": item.get("Keywords", item.get("keywords", "")),
+                        "version": item.get("Version", ""),
+                        "code_version": item.get("CodeVersion", "")
+                    }
+                    recommendations.append(rec)
+            else:
+                print(f"DEBUG: Структура ответа не содержит 'Data' или 'Data' не является списком")
+                print(f"DEBUG: Ключи в ответе: {list(data.keys()) if isinstance(data, dict) else 'Ответ не является словарем'}")
+            
+            print(f"DEBUG: Обработано {len(recommendations)} рекомендаций")
+            
+            return Response(
+                content=json.dumps({
+                    "success": True,
+                    "total": len(recommendations),
+                    "recommendations": recommendations
+                }, ensure_ascii=False),
+                media_type="application/json"
+            )
+            
+    except Exception as e:
+        print(f"ERROR: Ошибка при получении клинических рекомендаций: {str(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
+        return Response(
+            content=json.dumps({"error": f"Internal server error: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
+
+
+@app.post("/api/create-ai-session")
+async def create_ai_session(request: Request) -> Response:
+    """Создает новую сессию ИИ с клиническими рекомендациями"""
+    try:
+        body = await request.json()
+        
+        # Получаем данные клинической рекомендации
+        title = body.get("title", "")
+        description = body.get("description", "")
+        mkb_code = body.get("mkb_code", "")
+        organization = body.get("organization", "")
+        pdf_url = body.get("pdf_url", "")
+        recommendation_id = body.get("recommendation_id", "")
+        
+        print(f"DEBUG: Создание сессии ИИ для рекомендации ID: {recommendation_id}")
+        print(f"DEBUG: Название: {title}")
+        
+        # Создаем уникальный ID сессии
+        import uuid
+        session_id = str(uuid.uuid4())
+        
+        # Формируем начальное сообщение для ИИ
+        initial_message = f"""Пожалуйста, проанализируйте следующую клиническую рекомендацию и создайте диагностический алгоритм:
+
+Название: {title}
+Описание: {description}
+Код МКБ: {mkb_code}
+Организация: {organization}
+
+Ссылка на PDF: {pdf_url}
+
+Создайте пошаговый диагностический алгоритм на основе этой клинической рекомендации. Включите:
+1. Первичную оценку пациента
+2. Необходимые диагностические исследования
+3. Критерии постановки диагноза
+4. Дифференциальную диагностику
+5. Рекомендации по лечению
+
+Пожалуйста, структурируйте алгоритм в виде четких этапов с описанием действий на каждом этапе."""
+        
+        # Сохраняем сессию
+        dialogue_sessions[session_id] = {
+            "messages": [],
+            "initial_message": initial_message,
+            "recommendation_data": {
+                "title": title,
+                "description": description,
+                "mkb_code": mkb_code,
+                "organization": organization,
+                "pdf_url": pdf_url,
+                "recommendation_id": recommendation_id
+            },
+            "created_at": asyncio.get_event_loop().time()
+        }
+        
+        print(f"DEBUG: Сессия {session_id} создана успешно")
+        
+        return Response(
+            content=json.dumps({
+                "success": True,
+                "session_id": session_id,
+                "message": "Сессия ИИ создана успешно"
+            }, ensure_ascii=False),
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        print(f"ERROR: Ошибка при создании сессии ИИ: {str(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
+        return Response(
+            content=json.dumps({"error": f"Ошибка создания сессии: {str(e)}"}),
+            media_type="application/json",
+            status_code=500
+        )
+
+
+@app.get("/api/session-info")
+async def get_session_info(session_id: str) -> Response:
+    """Получает информацию о сессии"""
+    try:
+        if session_id not in dialogue_sessions:
+            return Response(
+                content=json.dumps({"error": "Сессия не найдена"}, ensure_ascii=False),
+                media_type="application/json",
+                status_code=404
+            )
+        
+        session = dialogue_sessions[session_id]
+        return Response(
+            content=json.dumps({
+                "success": True,
+                "recommendation_data": session.get("recommendation_data"),
+                "messages_count": len(session.get("messages", session.get("history", [])))
+            }, ensure_ascii=False),
+            media_type="application/json"
+        )
+    except Exception as e:
+        print(f"ERROR: Ошибка получения информации о сессии: {str(e)}")
+        return Response(
+            content=json.dumps({"error": f"Ошибка: {str(e)}"}, ensure_ascii=False),
             media_type="application/json",
             status_code=500
         )
