@@ -14,7 +14,7 @@ import pandas as pd
 import ollama  # pip install ollama
 
 # ---------- CONSTANTS ----------
-OLLAMA_MODEL: str = "hf.co/unsloth/Magistral-Small-2506-GGUF:Q8_K"          # сначала «ollama pull <n>»
+OLLAMA_MODEL: str = "hf.co/unsloth/Magistral-Small-2506-GGUF:Q8_0"          # сначала «ollama pull <n>»
 SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услугами
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
