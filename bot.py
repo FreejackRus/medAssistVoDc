@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import json
 from pathlib import Path
 from typing import Dict, List, TextIO
 import fitz
@@ -487,103 +488,99 @@ class MedicalAssistant:
 
     # ---------- SERVICES SELECTION ----------
     def generate_services_for_step(self, step_text: str, step_title: str = "") -> List[Dict[str, str]]:
-        """Находит релевантные услуги для конкретного этапа алгоритма"""
+        """Использует нейросеть для подбора релевантных услуг на основе контекста"""
         if self.services_df is None or self.services_df.empty:
             print("DEBUG: Услуги не загружены")
             return []
         
-        # Объединяем заголовок и текст для анализа
-        search_text = f"{step_title} {step_text}".lower()
+        # Проверяем минимальную длину содержимого
+        if len(step_text.strip()) < 50:
+            print(f"DEBUG: Слишком короткий текст для генерации услуг: {len(step_text)} символов")
+            return []
         
-        # Проверяем, нужны ли услуги для этого этапа
-        # Исключаем разделы, где услуги не нужны
+        # Исключаем разделы, где услуги точно не нужны
         exclude_patterns = [
             'введение', 'определение', 'эпидемиология', 'этиология', 'патогенез',
-            'классификация', 'кодирование', 'профилактика', 'реабилитация',
-            'список литературы', 'приложение', 'заключение', 'критерии качества',
-            'алгоритм', 'схема', 'таблица', 'рисунок'
+            'классификация', 'кодирование', 'список литературы', 'приложение', 
+            'заключение', 'критерии качества', 'библиография'
         ]
         
-        # Если заголовок содержит исключающие паттерны, не предлагаем услуги
         for pattern in exclude_patterns:
             if pattern in step_title.lower():
                 print(f"DEBUG: Пропускаем услуги для раздела '{step_title}' (исключающий паттерн: {pattern})")
                 return []
         
-        # Проверяем минимальную длину содержимого
-        if len(step_text.strip()) < 100:
-            print(f"DEBUG: Слишком короткий текст для генерации услуг: {len(step_text)} символов")
+        # Подготавливаем список всех доступных услуг для ИИ
+        services_list = []
+        for _, service in self.services_df.iterrows():
+            services_list.append(f"ID: {service['ID']} - {service['Название']}")
+        
+        # Ограничиваем список услуг для передачи в промпт (берем первые 200)
+        services_text = "\n".join(services_list[:200])
+        
+        # Формируем промпт для ИИ
+        system_prompt = (
+            "Ты - медицинский эксперт. Твоя задача - выбрать ТОЛЬКО те медицинские услуги, "
+            "которые ДЕЙСТВИТЕЛЬНО необходимы для данного этапа диагностики или лечения.\n\n"
+            "ВАЖНЫЕ ПРАВИЛА:\n"
+            "1. Выбирай ТОЛЬКО услуги, которые прямо связаны с описанным этапом\n"
+            "2. НЕ предлагай услуги для общих разделов (введение, классификация и т.д.)\n"
+            "3. Максимум 3-5 самых релевантных услуг\n"
+            "4. Если этап не требует конкретных медицинских услуг - верни пустой список\n"
+            "5. Отвечай ТОЛЬКО в формате JSON: [{\"id\": \"123\", \"name\": \"Название услуги\"}]\n\n"
+            f"Доступные услуги:\n{services_text}\n\n"
+            f"Этап: {step_title}\n"
+            f"Описание этапа: {step_text[:3000]}\n\n"
+            "Выбери релевантные услуги в формате JSON:"
+        )
+        
+        try:
+            # Вызываем ИИ для подбора услуг
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt}
+                ],
+                options={
+                    "temperature": 0.1,  # Низкая температура для более точного выбора
+                    "top_p": 0.9,
+                    "num_predict": 500,  # Ограничиваем длину ответа
+                }
+            )
+            
+            ai_response = response['message']['content'].strip()
+            print(f"DEBUG: Ответ ИИ для услуг: {ai_response[:200]}...")
+            
+            # Пытаемся извлечь JSON из ответа
+            import json
+            import re
+            json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                selected_services = json.loads(json_str)
+                
+                # Формируем результат в нужном формате
+                result = []
+                for service in selected_services[:5]:  # Максимум 5 услуг
+                    if 'id' in service and 'name' in service:
+                        result.append({
+                            "name": service['name'],
+                            "description": f"Медицинская услуга (ID: {service['id']})",
+                            "indications": f"Рекомендуется для этапа: {step_title}",
+                            "service_id": str(service['id'])
+                        })
+                
+                print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
+                return result
+            else:
+                print("DEBUG: ИИ не вернула валидный JSON")
+                return []
+                
+        except Exception as e:
+            print(f"DEBUG: Ошибка при вызове ИИ для подбора услуг: {e}")
             return []
         
-        # Расширенная карта ключевых слов для поиска услуг с контекстом
-        keywords_map = {
-            # Диагностические процедуры
-            'диагностика': ['диагностика', 'исследование'],
-            'обследование': ['обследование', 'исследование'],
-            'анализ': ['анализ', 'исследование'],
-            'кровь': ['анализ крови', 'исследование крови'],
-            'моча': ['анализ мочи', 'исследование мочи'],
-            'биохимия': ['биохимический анализ'],
-            'микробиологическое': ['микробиологическое исследование'],
-            
-            # Инструментальная диагностика
-            'узи': ['ультразвуковое исследование', 'узи'],
-            'ультразвуковое': ['ультразвуковое исследование'],
-            'рентген': ['рентгенография', 'рентген'],
-            'томография': ['томография'],
-            'кт': ['компьютерная томография'],
-            'мрт': ['магнитно-резонансная томография'],
-            'эндоскопия': ['эндоскопическое исследование'],
-            
-            # Лечебные процедуры
-            'лечение': ['лечение', 'терапия'],
-            'терапия': ['терапия'],
-            'операция': ['операция', 'хирургическое лечение'],
-            'хирургия': ['хирургическое лечение', 'операция'],
-            'удаление': ['удаление', 'резекция'],
-            'пункция': ['пункция'],
-            'биопсия': ['биопсия'],
-            'блокада': ['блокада'],
-            
-            # Консультации (только при явном упоминании)
-            'консультация специалиста': ['консультация'],
-            'направление к': ['консультация'],
-            'осмотр специалиста': ['консультация'],
-        }
-        
-        # Находим релевантные услуги
-        relevant_services = []
-        found_keywords = []
-        
-        for keyword, search_terms in keywords_map.items():
-            if keyword in search_text:
-                found_keywords.append(keyword)
-                for term in search_terms:
-                    # Ищем услуги, содержащие термин
-                    matching_services = self.services_df[
-                        self.services_df['Название'].str.lower().str.contains(term, na=False)
-                    ]
-                    
-                    for _, service in matching_services.head(2).iterrows():  # Берем максимум 2 услуги на термин
-                        service_dict = {
-                            "name": service['Название'],
-                            "description": f"Медицинская услуга (ID: {service['ID']})",
-                            "indications": f"Рекомендуется для этапа: {step_title}",
-                            "service_id": str(service['ID'])
-                        }
-                        
-                        # Избегаем дублирования
-                        if not any(s['name'] == service_dict['name'] for s in relevant_services):
-                            relevant_services.append(service_dict)
-        
-        print(f"DEBUG: Найденные ключевые слова: {found_keywords}")
-        print(f"DEBUG: Найдено услуг: {len(relevant_services)}")
-        
-        # НЕ добавляем общие консультации автоматически
-        # Услуги предлагаются только при явном соответствии контексту
-        
-        # Ограничиваем количество услуг
-        return relevant_services[:5]
+        return []
 
     # ---------- DIALOGUE ----------
     def _generate_dialogue_streaming(self, user_message: str, conversation_history: List[Dict], sections: Dict[str, str], file: TextIO) -> None:

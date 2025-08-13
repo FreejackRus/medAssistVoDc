@@ -554,43 +554,93 @@
   // Кнопка "Использовать образец PDF"
   const useSampleBtn = document.getElementById('useSampleBtn');
   useSampleBtn.addEventListener('click', async () => {
+    // Сброс состояния
+    fullMarkdown = '';
+    result.classList.add('hidden');
+    actionButtons.classList.add('hidden');
+    
+    // Показываем прогресс
+    progressContainer.classList.remove('hidden');
+    updateProgress(0, 'Загрузка образца...', 'Подготовка к обработке...');
+
     try {
-      useSampleBtn.disabled = true;
-      useSampleBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Загрузка...';
-
-      const res = await fetch('/use_sample_pdf', { method: 'POST' });
-      const data = await res.json();
-
+      updateProgress(10, 'Отправка запроса...', 'Соединение с сервером...');
+      
+      const res = await fetch('/generate_sample', { method: 'POST' });
+      
       if (!res.ok) {
-        throw new Error(data.error || 'Ошибка загрузки образца');
+        throw new Error(`Ошибка сервера: ${res.status}`);
       }
 
-      // Обновляем интерфейс как при обычной загрузке
-      fileName.textContent = 'КР287_2.pdf (образец)';
-      fileSize.textContent = 'Клинические рекомендации';
-      fileInfo.classList.remove('hidden');
+      updateProgress(20, 'Анализ документа...', 'Извлечение текста из PDF...');
       
-      // Показываем прогресс
-      progressContainer.classList.remove('hidden');
-      progressBar.style.width = '100%';
-      progressText.textContent = 'Обработка завершена';
-      
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let chunkCount = 0;
+
       // Показываем результат
-      resultContainer.classList.remove('hidden');
-      resultContent.innerHTML = marked.parse(data.result);
-      fullMarkdown = data.result;
-      
-      // Показываем кнопки действий
-      actionButtons.classList.remove('hidden');
+      result.classList.remove('hidden');
+      result.innerHTML = '<div class="text-center text-slate-500"><div class="typing-indicator mr-1"></div><div class="typing-indicator mr-1"></div><div class="typing-indicator mr-3"></div>Генерируем алгоритм...</div>';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunkCount++;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n\n');
+
+        // Обновляем прогресс на основе количества чанков
+        const streamProgress = Math.min(30 + (chunkCount * 2), 95);
+        updateProgress(streamProgress, 'Генерация алгоритма...', 'Обработка клинических рекомендаций...');
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const text = JSON.parse(line.slice(6));
+              fullMarkdown += text;
+
+              // Парсим Markdown → HTML
+              result.innerHTML = marked.parse(fullMarkdown);
+
+              // Подсветка кода
+              document.querySelectorAll('#result pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+
+              // Прокрутка
+              result.scrollTop = result.scrollHeight;
+            } catch (e) {
+              console.error('Ошибка парсинга:', e);
+            }
+          }
+        }
+      }
+
+      // Завершение
+      updateProgress(100, 'Готово!', 'Алгоритм успешно сгенерирован');
       
       // Устанавливаем флаг, что файл загружен
       currentFile = new File(['sample'], 'КР287_2.pdf', { type: 'application/pdf' });
+      
+      setTimeout(() => {
+        progressContainer.classList.add('hidden');
+        actionButtons.classList.remove('hidden');
+        // Добавляем кнопки "Предложить услуги" после завершения генерации
+        addServicesButtons();
+      }, 1000);
 
     } catch (error) {
-      alert('Ошибка загрузки образца: ' + error.message);
-    } finally {
-      useSampleBtn.disabled = false;
-      useSampleBtn.innerHTML = '<svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Использовать образец PDF';
+      console.error('Ошибка:', error);
+      result.innerHTML = `<div class="text-red-600 text-center p-8">
+        <svg class="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <h3 class="text-lg font-semibold mb-2">Ошибка обработки</h3>
+        <p>${error.message}</p>
+      </div>`;
+      result.classList.remove('hidden');
+      progressContainer.classList.add('hidden');
     }
   });
 

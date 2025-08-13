@@ -242,9 +242,51 @@ async def start_dialogue(pdf: UploadFile = File(...)) -> Response:
         pdf_path.unlink(missing_ok=True)
 
 
+@app.post("/generate_sample")
+async def generate_sample() -> StreamingResponse:
+    """Генерирует алгоритм на основе предустановленного PDF файла"""
+    sample_pdf_path = Path("КР287_2.pdf")
+    
+    if not sample_pdf_path.exists():
+        async def error_stream():
+            yield f"data: {json.dumps('❌ Образец PDF файла не найден')}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # Загружаем структуру рекомендаций
+        sections = await asyncio.get_running_loop().run_in_executor(
+            None, assistant.load_guidelines, str(sample_pdf_path)
+        )
+        if not sections:
+            yield f"data: {json.dumps('❌ Не удалось прочитать образец PDF')}\n\n"
+            return
+
+        q = asyncio.Queue()
+        writer = AsyncStreamWriter(q)
+
+        # Запускаем генерацию в фоне
+        loop = asyncio.get_running_loop()
+        task = loop.run_in_executor(None, assistant._generate_streaming, sections, writer)
+
+        while True:
+            try:
+                chunk = await q.get()
+                if chunk == "":
+                    break
+                # Отправляем как SSE
+                yield f"data: {json.dumps(chunk)}\n\n"
+            except Exception as e:
+                print("Error in stream:", e)
+                break
+
+        await task
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.post("/use_sample_pdf")
 async def use_sample_pdf() -> Response:
-    """Использует предустановленный PDF файл для демонстрации"""
+    """Создает диалоговую сессию с предустановленным PDF файлом"""
     sample_pdf_path = Path("КР287_2.pdf")
     
     if not sample_pdf_path.exists():
@@ -267,7 +309,7 @@ async def use_sample_pdf() -> Response:
                 status_code=400
             )
         
-        # Создаем новую сессию
+        # Создаем новую сессию для диалога
         session_id = f"session_{len(dialogue_sessions) + 1}"
         dialogue_sessions[session_id] = {
             "sections": sections,
@@ -275,16 +317,10 @@ async def use_sample_pdf() -> Response:
             "diagnosis": assistant.diagnosis_name
         }
         
-        # Формируем результат для отображения (как в upload_pdf)
-        result_markdown = f"# {assistant.diagnosis_name}\n\n"
-        for section in sections:
-            result_markdown += f"## {section['title']}\n\n{section['content']}\n\n"
-        
         return Response(
             content=json.dumps({
                 "session_id": session_id,
                 "diagnosis": assistant.diagnosis_name,
-                "result": result_markdown,
                 "message": "Диалоговая сессия создана с образцом клинических рекомендаций. Теперь вы можете задавать вопросы."
             }, ensure_ascii=False),
             media_type="application/json"
