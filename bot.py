@@ -528,8 +528,8 @@ class MedicalAssistant:
             "3. Максимум 3-5 самых релевантных услуг\n"
             "4. Если этап не требует конкретных медицинских услуг - верни 'Нет релевантных услуг'\n"
             "5. Отвечай в табличном формате:\n"
-            "   ID | Название услуги | Обоснование\n"
-            "   123 | Анализ крови | Необходим для диагностики\n\n"
+            "   | № | Услуга | Категория | Релевантность | Примечание |\n"
+            "   | 1 | Анализ крови | Лабораторная диагностика | ✅ Да | Необходим для диагностики |\n\n"
             f"Доступные услуги:\n{services_text}\n\n"
             f"Этап: {step_title}\n"
             f"Описание этапа: {step_text[:3000]}\n\n"
@@ -561,43 +561,48 @@ class MedicalAssistant:
                 print(f"DEBUG: ИИ не нашла релевантных услуг для '{step_title}'")
                 return []
             
-            # Ищем строки таблицы в формате: ID | Название | Обоснование
-            table_lines = []
-            lines = ai_response.split('\n')
-            
-            for line in lines:
-                line = line.strip()
-                # Пропускаем заголовки и пустые строки
-                if not line or 'ID' in line and 'Название' in line:
-                    continue
-                
-                # Ищем строки с разделителем |
-                if '|' in line:
-                    parts = [part.strip() for part in line.split('|')]
-                    if len(parts) >= 2:  # Минимум ID и название
-                        table_lines.append(parts)
-            
-            # Формируем результат
-            result = []
-            for parts in table_lines[:5]:  # Максимум 5 услуг
-                try:
-                    service_id = parts[0].strip()
-                    service_name = parts[1].strip() if len(parts) > 1 else ""
-                    justification = parts[2].strip() if len(parts) > 2 else "Рекомендуется для данного этапа"
-                    
-                    # Проверяем, что ID - это число
-                    if service_id.isdigit() and service_name:
-                        result.append({
-                            "name": service_name,
-                            "description": f"Медицинская услуга (ID: {service_id})",
-                            "indications": justification,
-                            "service_id": service_id
-                        })
-                    else:
-                        print(f"DEBUG: Некорректная строка таблицы: {parts}")
-                except (IndexError, ValueError) as e:
-                    print(f"DEBUG: Ошибка парсинга строки таблицы {parts}: {e}")
-                    continue
+            # Ищем строки таблицы в формате: № | Услуга | Категория | Релевантность | Примечание
+             table_lines = []
+             lines = ai_response.split('\n')
+             
+             for line in lines:
+                 line = line.strip()
+                 # Пропускаем заголовки, разделители и пустые строки
+                 if not line or '№' in line or '---' in line or line.startswith('|---'):
+                     continue
+                 
+                 # Ищем строки с разделителем |
+                 if '|' in line:
+                     parts = [part.strip() for part in line.split('|')]
+                     # Убираем пустые элементы в начале и конце
+                     parts = [p for p in parts if p]
+                     if len(parts) >= 3:  # Минимум номер, название и категория
+                         table_lines.append(parts)
+             
+             # Формируем результат
+             result = []
+             for parts in table_lines[:5]:  # Максимум 5 услуг
+                 try:
+                     service_number = parts[0].strip()  # Номер в таблице
+                     service_name = parts[1].strip() if len(parts) > 1 else ""
+                     category = parts[2].strip() if len(parts) > 2 else ""
+                     relevance = parts[3].strip() if len(parts) > 3 else "✅ Да"
+                     justification = parts[4].strip() if len(parts) > 4 else "Рекомендуется для данного этапа"
+                     
+                     # Проверяем, что номер - это число и есть название
+                     if service_number.isdigit() and service_name and "✅" in relevance:
+                         # Используем номер как ID (можно заменить на реальный ID из базы)
+                         result.append({
+                             "name": service_name,
+                             "description": f"Медицинская услуга ({category})",
+                             "indications": justification,
+                             "service_id": service_number
+                         })
+                     else:
+                         print(f"DEBUG: Некорректная строка таблицы: {parts}")
+                 except (IndexError, ValueError) as e:
+                     print(f"DEBUG: Ошибка парсинга строки таблицы {parts}: {e}")
+                     continue
             
             print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
             return result
