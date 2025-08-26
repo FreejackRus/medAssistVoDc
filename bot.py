@@ -526,12 +526,14 @@ class MedicalAssistant:
             "1. Выбирай ТОЛЬКО услуги, которые прямо связаны с описанным этапом\n"
             "2. НЕ предлагай услуги для общих разделов (введение, классификация и т.д.)\n"
             "3. Максимум 3-5 самых релевантных услуг\n"
-            "4. Если этап не требует конкретных медицинских услуг - верни пустой список\n"
-            "5. Отвечай ТОЛЬКО в формате JSON: [{\"id\": \"123\", \"name\": \"Название услуги\"}]\n\n"
+            "4. Если этап не требует конкретных медицинских услуг - верни 'Нет релевантных услуг'\n"
+            "5. Отвечай в табличном формате:\n"
+            "   ID | Название услуги | Обоснование\n"
+            "   123 | Анализ крови | Необходим для диагностики\n\n"
             f"Доступные услуги:\n{services_text}\n\n"
             f"Этап: {step_title}\n"
             f"Описание этапа: {step_text[:3000]}\n\n"
-            "Выбери релевантные услуги в формате JSON:"
+            "Выбери релевантные услуги в табличном формате:"
         )
         
         try:
@@ -551,95 +553,54 @@ class MedicalAssistant:
             ai_response = response['message']['content'].strip()
             print(f"DEBUG: Ответ ИИ для услуг: {ai_response[:200]}...")
             
-            # Пытаемся извлечь JSON из ответа
-            import json
+            # Парсим табличный формат
             import re
             
-            # Ищем JSON в ответе (массив или объект)
-            json_match = re.search(r'\[.*?\]', ai_response, re.DOTALL)  # Сначала ищем массив
-            if not json_match:
-                json_match = re.search(r'\{.*?\}', ai_response, re.DOTALL)  # Если нет массива, ищем объект
-            
-            if json_match:
-                json_str = json_match.group(0)
-                
-                # Очищаем JSON от возможных проблем
-                json_str = json_str.strip()
-                
-                # Пытаемся исправить распространенные ошибки JSON
-                json_str = re.sub(r',\s*}', '}', json_str)  # Убираем лишние запятые перед }
-                json_str = re.sub(r',\s*]', ']', json_str)  # Убираем лишние запятые перед ]
-                json_str = re.sub(r'([^\\])"([^"]*?)"([^:])', r'\1"\2"\3', json_str)  # Исправляем кавычки
-                
-                # Убираем лишние закрывающие скобки в середине JSON
-                # Ищем паттерн: "текст"}}] и заменяем на "текст"}
-                json_str = re.sub(r'"([^"]*)"}}]', r'"\1"}]', json_str)
-                # Ищем паттерн: "текст"}} и заменяем на "текст"}
-                json_str = re.sub(r'"([^"]*)"}}(?=[,\]}])', r'"\1"}', json_str)
-                
-                # Пытаемся закрыть незакрытые структуры
-                open_braces = json_str.count('{') - json_str.count('}')
-                open_brackets = json_str.count('[') - json_str.count(']')
-                
-                if open_braces > 0:
-                    json_str += '}' * open_braces
-                    print(f"DEBUG: Добавлено {open_braces} закрывающих скобок {{}}")
-                
-                if open_brackets > 0:
-                    json_str += ']' * open_brackets
-                    print(f"DEBUG: Добавлено {open_brackets} закрывающих скобок []")
-                
-                try:
-                    parsed_json = json.loads(json_str)
-                    
-                    # Извлекаем услуги из разных возможных структур
-                    selected_services = []
-                    
-                    if isinstance(parsed_json, dict):
-                        # Если есть поле 'услуги', извлекаем из него
-                        if 'услуги' in parsed_json and isinstance(parsed_json['услуги'], list):
-                            selected_services = parsed_json['услуги']
-                        # Если есть поля id и name/название в корне, это одна услуга
-                        elif ('id' in parsed_json and ('name' in parsed_json or 'название' in parsed_json)):
-                            selected_services = [parsed_json]
-                        else:
-                            print(f"DEBUG: Объект не содержит ожидаемых полей: {list(parsed_json.keys())}")
-                            return []
-                    elif isinstance(parsed_json, list):
-                        selected_services = parsed_json
-                    else:
-                        print(f"DEBUG: Неожиданный тип JSON: {type(parsed_json)}")
-                        return []
-                    
-                    # Формируем результат в нужном формате
-                    result = []
-                    for service in selected_services[:5]:  # Максимум 5 услуг
-                        if isinstance(service, dict):
-                            # Поддерживаем разные названия полей
-                            service_id = service.get('id') or service.get('ID')
-                            service_name = service.get('name') or service.get('название') or service.get('Название')
-                            
-                            if service_id and service_name:
-                                result.append({
-                                    "name": service_name,
-                                    "description": f"Медицинская услуга (ID: {service_id})",
-                                    "indications": f"Рекомендуется для этапа: {step_title}",
-                                    "service_id": str(service_id)
-                                })
-                            else:
-                                print(f"DEBUG: Услуга не содержит необходимых полей: {service}")
-                    
-                    print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
-                    return result
-                    
-                except json.JSONDecodeError as json_error:
-                    print(f"DEBUG: Ошибка парсинга JSON: {json_error}")
-                    print(f"DEBUG: Проблемный JSON: {json_str}")
-                    return []
-            else:
-                print("DEBUG: ИИ не вернула валидный JSON (ни массив, ни объект)")
-                print(f"DEBUG: Полный ответ ИИ: {ai_response}")
+            # Проверяем, есть ли сообщение об отсутствии услуг
+            if "нет релевантных услуг" in ai_response.lower():
+                print(f"DEBUG: ИИ не нашла релевантных услуг для '{step_title}'")
                 return []
+            
+            # Ищем строки таблицы в формате: ID | Название | Обоснование
+            table_lines = []
+            lines = ai_response.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                # Пропускаем заголовки и пустые строки
+                if not line or 'ID' in line and 'Название' in line:
+                    continue
+                
+                # Ищем строки с разделителем |
+                if '|' in line:
+                    parts = [part.strip() for part in line.split('|')]
+                    if len(parts) >= 2:  # Минимум ID и название
+                        table_lines.append(parts)
+            
+            # Формируем результат
+            result = []
+            for parts in table_lines[:5]:  # Максимум 5 услуг
+                try:
+                    service_id = parts[0].strip()
+                    service_name = parts[1].strip() if len(parts) > 1 else ""
+                    justification = parts[2].strip() if len(parts) > 2 else "Рекомендуется для данного этапа"
+                    
+                    # Проверяем, что ID - это число
+                    if service_id.isdigit() and service_name:
+                        result.append({
+                            "name": service_name,
+                            "description": f"Медицинская услуга (ID: {service_id})",
+                            "indications": justification,
+                            "service_id": service_id
+                        })
+                    else:
+                        print(f"DEBUG: Некорректная строка таблицы: {parts}")
+                except (IndexError, ValueError) as e:
+                    print(f"DEBUG: Ошибка парсинга строки таблицы {parts}: {e}")
+                    continue
+            
+            print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
+            return result
                 
         except Exception as e:
             print(f"DEBUG: Ошибка при вызове ИИ для подбора услуг: {e}")
