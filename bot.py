@@ -554,26 +554,43 @@ class MedicalAssistant:
             # Пытаемся извлечь JSON из ответа
             import json
             import re
-            json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
+            
+            # Ищем JSON массив в ответе
+            json_match = re.search(r'\[.*?\]', ai_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
-                selected_services = json.loads(json_str)
                 
-                # Формируем результат в нужном формате
-                result = []
-                for service in selected_services[:5]:  # Максимум 5 услуг
-                    if 'id' in service and 'name' in service:
-                        result.append({
-                            "name": service['name'],
-                            "description": f"Медицинская услуга (ID: {service['id']})",
-                            "indications": f"Рекомендуется для этапа: {step_title}",
-                            "service_id": str(service['id'])
-                        })
+                # Очищаем JSON от возможных проблем
+                json_str = json_str.strip()
                 
-                print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
-                return result
+                # Пытаемся исправить распространенные ошибки JSON
+                json_str = re.sub(r',\s*}', '}', json_str)  # Убираем лишние запятые перед }
+                json_str = re.sub(r',\s*]', ']', json_str)  # Убираем лишние запятые перед ]
+                json_str = re.sub(r'([^\\])"([^"]*?)"([^:])', r'\1"\2"\3', json_str)  # Исправляем кавычки
+                
+                try:
+                    selected_services = json.loads(json_str)
+                    
+                    # Формируем результат в нужном формате
+                    result = []
+                    for service in selected_services[:5]:  # Максимум 5 услуг
+                        if isinstance(service, dict) and 'id' in service and 'name' in service:
+                            result.append({
+                                "name": service['name'],
+                                "description": f"Медицинская услуга (ID: {service['id']})",
+                                "indications": f"Рекомендуется для этапа: {step_title}",
+                                "service_id": str(service['id'])
+                            })
+                    
+                    print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
+                    return result
+                    
+                except json.JSONDecodeError as json_error:
+                    print(f"DEBUG: Ошибка парсинга JSON: {json_error}")
+                    print(f"DEBUG: Проблемный JSON: {json_str}")
+                    return []
             else:
-                print("DEBUG: ИИ не вернула валидный JSON")
+                print("DEBUG: ИИ не вернула валидный JSON массив")
                 return []
                 
         except Exception as e:
