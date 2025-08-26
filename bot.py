@@ -555,8 +555,11 @@ class MedicalAssistant:
             import json
             import re
             
-            # Ищем JSON массив в ответе
-            json_match = re.search(r'\[.*?\]', ai_response, re.DOTALL)
+            # Ищем JSON в ответе (массив или объект)
+            json_match = re.search(r'\[.*?\]', ai_response, re.DOTALL)  # Сначала ищем массив
+            if not json_match:
+                json_match = re.search(r'\{.*?\}', ai_response, re.DOTALL)  # Если нет массива, ищем объект
+            
             if json_match:
                 json_str = json_match.group(0)
                 
@@ -569,7 +572,16 @@ class MedicalAssistant:
                 json_str = re.sub(r'([^\\])"([^"]*?)"([^:])', r'\1"\2"\3', json_str)  # Исправляем кавычки
                 
                 try:
-                    selected_services = json.loads(json_str)
+                    parsed_json = json.loads(json_str)
+                    
+                    # Если получили объект, оборачиваем в массив
+                    if isinstance(parsed_json, dict):
+                        selected_services = [parsed_json]
+                    elif isinstance(parsed_json, list):
+                        selected_services = parsed_json
+                    else:
+                        print(f"DEBUG: Неожиданный тип JSON: {type(parsed_json)}")
+                        return []
                     
                     # Формируем результат в нужном формате
                     result = []
@@ -590,7 +602,8 @@ class MedicalAssistant:
                     print(f"DEBUG: Проблемный JSON: {json_str}")
                     return []
             else:
-                print("DEBUG: ИИ не вернула валидный JSON массив")
+                print("DEBUG: ИИ не вернула валидный JSON (ни массив, ни объект)")
+                print(f"DEBUG: Полный ответ ИИ: {ai_response}")
                 return []
                 
         except Exception as e:
