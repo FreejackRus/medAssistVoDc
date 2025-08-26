@@ -571,12 +571,34 @@ class MedicalAssistant:
                 json_str = re.sub(r',\s*]', ']', json_str)  # Убираем лишние запятые перед ]
                 json_str = re.sub(r'([^\\])"([^"]*?)"([^:])', r'\1"\2"\3', json_str)  # Исправляем кавычки
                 
+                # Пытаемся закрыть незакрытые структуры
+                open_braces = json_str.count('{') - json_str.count('}')
+                open_brackets = json_str.count('[') - json_str.count(']')
+                
+                if open_braces > 0:
+                    json_str += '}' * open_braces
+                    print(f"DEBUG: Добавлено {open_braces} закрывающих скобок {{}}")
+                
+                if open_brackets > 0:
+                    json_str += ']' * open_brackets
+                    print(f"DEBUG: Добавлено {open_brackets} закрывающих скобок []")
+                
                 try:
                     parsed_json = json.loads(json_str)
                     
-                    # Если получили объект, оборачиваем в массив
+                    # Извлекаем услуги из разных возможных структур
+                    selected_services = []
+                    
                     if isinstance(parsed_json, dict):
-                        selected_services = [parsed_json]
+                        # Если есть поле 'услуги', извлекаем из него
+                        if 'услуги' in parsed_json and isinstance(parsed_json['услуги'], list):
+                            selected_services = parsed_json['услуги']
+                        # Если есть поля id и name/название в корне, это одна услуга
+                        elif ('id' in parsed_json and ('name' in parsed_json or 'название' in parsed_json)):
+                            selected_services = [parsed_json]
+                        else:
+                            print(f"DEBUG: Объект не содержит ожидаемых полей: {list(parsed_json.keys())}")
+                            return []
                     elif isinstance(parsed_json, list):
                         selected_services = parsed_json
                     else:
@@ -586,13 +608,20 @@ class MedicalAssistant:
                     # Формируем результат в нужном формате
                     result = []
                     for service in selected_services[:5]:  # Максимум 5 услуг
-                        if isinstance(service, dict) and 'id' in service and 'name' in service:
-                            result.append({
-                                "name": service['name'],
-                                "description": f"Медицинская услуга (ID: {service['id']})",
-                                "indications": f"Рекомендуется для этапа: {step_title}",
-                                "service_id": str(service['id'])
-                            })
+                        if isinstance(service, dict):
+                            # Поддерживаем разные названия полей
+                            service_id = service.get('id') or service.get('ID')
+                            service_name = service.get('name') or service.get('название') or service.get('Название')
+                            
+                            if service_id and service_name:
+                                result.append({
+                                    "name": service_name,
+                                    "description": f"Медицинская услуга (ID: {service_id})",
+                                    "indications": f"Рекомендуется для этапа: {step_title}",
+                                    "service_id": str(service_id)
+                                })
+                            else:
+                                print(f"DEBUG: Услуга не содержит необходимых полей: {service}")
                     
                     print(f"DEBUG: ИИ выбрала {len(result)} услуг для '{step_title}'")
                     return result
