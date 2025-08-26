@@ -571,6 +571,12 @@ class MedicalAssistant:
                 json_str = re.sub(r',\s*]', ']', json_str)  # Убираем лишние запятые перед ]
                 json_str = re.sub(r'([^\\])"([^"]*?)"([^:])', r'\1"\2"\3', json_str)  # Исправляем кавычки
                 
+                # Убираем лишние закрывающие скобки в середине JSON
+                # Ищем паттерн: "текст"}}] и заменяем на "текст"}
+                json_str = re.sub(r'"([^"]*)"}}]', r'"\1"}]', json_str)
+                # Ищем паттерн: "текст"}} и заменяем на "текст"}
+                json_str = re.sub(r'"([^"]*)"}}(?=[,\]}])', r'"\1"}', json_str)
+                
                 # Пытаемся закрыть незакрытые структуры
                 open_braces = json_str.count('{') - json_str.count('}')
                 open_brackets = json_str.count('[') - json_str.count(']')
@@ -735,9 +741,6 @@ class MedicalAssistant:
 
     # ---------- RUN ----------
     def run(self):
-        if not self.db:
-            print("❌ Index not loaded")
-            return
         print("🤖 Ready. Type PDF path or 'exit'")
         while True:
             pdf = input("📄 PDF: ").strip()
