@@ -36,10 +36,90 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             width: 100%;
             padding: 2rem;
+        }
+
+        .main-content {
+            display: flex;
+            gap: 2rem;
+            flex: 1;
+            margin-bottom: 2rem;
+        }
+
+        .chat-section {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .services-section {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .services-section h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+
+        .service-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .service-item:hover {
+            background: #e3f2fd;
+            border-color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        .service-item .service-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.25rem;
+        }
+
+        .service-item .service-id {
+            font-size: 0.85rem;
+            color: #666;
+            font-family: monospace;
+            margin-bottom: 0.5rem;
+        }
+
+        .service-item .service-description {
+            font-size: 0.9rem;
+            color: #495057;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .service-item .service-indications {
+            font-size: 0.85rem;
+            color: #28a745;
+            font-style: italic;
+            line-height: 1.3;
+        }
+
+        .services-loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
         }
 
         .chat-messages {
@@ -206,15 +286,26 @@
             <p id="recDesc"></p>
         </div>
 
-        <div class="chat-messages" id="chatMessages">
-            <div class="message system">
-                🔄 Инициализация диалога с ИИ...
-            </div>
-        </div>
+        <div class="main-content">
+            <div class="chat-section">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message system">
+                        🔄 Инициализация диалога с ИИ...
+                    </div>
+                </div>
 
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            ИИ анализирует рекомендации и генерирует ответ...
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    ИИ анализирует рекомендации и генерирует ответ...
+                </div>
+            </div>
+
+            <div class="services-section">
+                <h3>📋 Релевантные услуги</h3>
+                <div id="servicesContainer">
+                    <div class="services-loading">Загрузка услуг...</div>
+                </div>
+            </div>
         </div>
 
         <div class="chat-input">
@@ -340,12 +431,71 @@
                     }
                 }
 
+                // После завершения генерации ответа загружаем релевантные услуги
+                if (assistantMessage.trim()) {
+                    await loadRelevantServices(assistantMessage);
+                }
+
             } catch (error) {
                 console.error('Ошибка отправки сообщения:', error);
                 addMessage('system', '❌ Ошибка при отправке сообщения: ' + error.message);
             } finally {
                 setGenerating(false);
             }
+        }
+
+        // Загрузка релевантных услуг
+        async function loadRelevantServices(algorithmStep) {
+            const servicesContainer = document.getElementById('servicesContainer');
+            servicesContainer.innerHTML = '<div class="services-loading">Поиск релевантных услуг...</div>';
+            
+            try {
+                const response = await fetch('/generate_services', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        step_text: algorithmStep,
+                        step_title: 'Шаг алгоритма'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayServices(data.services || []);
+
+            } catch (error) {
+                console.error('Ошибка загрузки услуг:', error);
+                servicesContainer.innerHTML = '<div class="services-loading">❌ Ошибка загрузки услуг</div>';
+            }
+        }
+
+        // Отображение услуг
+        function displayServices(services) {
+            const servicesContainer = document.getElementById('servicesContainer');
+            
+            if (!services || services.length === 0) {
+                servicesContainer.innerHTML = '<div class="services-loading">Релевантные услуги не найдены</div>';
+                return;
+            }
+
+            let servicesHtml = '';
+            services.forEach(service => {
+                servicesHtml += `
+                    <div class="service-item">
+                        <div class="service-name">${service.name || 'Без названия'}</div>
+                        <div class="service-id">ID: ${service.service_id || 'N/A'}</div>
+                        <div class="service-description">${service.description || ''}</div>
+                        <div class="service-indications">${service.indications || ''}</div>
+                    </div>
+                `;
+            });
+
+            servicesContainer.innerHTML = servicesHtml;
         }
 
         // Добавление сообщения в чат
