@@ -12,6 +12,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 import pandas as pd
 
 import ollama  # pip install ollama
+import logging
+from datetime import datetime
 
 # ---------- CONSTANTS ----------
 OLLAMA_MODEL: str = "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q8_0"          # сначала «ollama pull <n>»
@@ -19,6 +21,17 @@ SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услуг
 CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 MAX_INPUT_TOK: int = 135_000
+
+# Настройка логирования для отладки генерации услуг
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('services_debug.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+services_logger = logging.getLogger('services_generation')
 # Улучшенные паттерны для распознавания структуры
 SECTION_PATTERNS = [
     re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
@@ -489,18 +502,34 @@ class MedicalAssistant:
     # ---------- SERVICES SELECTION ----------
     def generate_services_for_step(self, step_text: str, step_title: str = "") -> List[Dict[str, str]]:
         """Использует нейросеть для подбора релевантных услуг на основе контекста"""
+        services_logger.info(f"=== НАЧАЛО ГЕНЕРАЦИИ УСЛУГ ===")
+        services_logger.info(f"Заголовок этапа: '{step_title}'")
+        services_logger.info(f"Текст этапа (первые 200 символов): '{step_text[:200]}...'")
+        services_logger.info(f"Длина текста: {len(step_text)} символов")
+        
         if self.services_df is None or self.services_df.empty:
+            services_logger.warning("Услуги не загружены или DataFrame пустой")
             return []
+        
+        services_logger.info(f"Загружено услуг в DataFrame: {len(self.services_df)}")
 
         # Более мягкая фильтрация - ищем ключевые медицинские термины
         medical_keywords = ['узи', 'анализ', 'исследование', 'диагностика', 'обследование', 'тест', 'проба', 'рентген', 'томография', 'эндоскопия', 'биопсия', 'пункция', 'мониторинг', 'скрининг']
         text_lower = step_text.lower()
         
+        services_logger.info(f"Поиск медицинских ключевых слов в тексте...")
+        found_keywords = [kw for kw in medical_keywords if kw in text_lower]
+        services_logger.info(f"Найденные ключевые слова: {found_keywords}")
+        
         # Проверяем наличие медицинских терминов или достаточной длины текста
         has_medical_terms = any(keyword in text_lower for keyword in medical_keywords)
         has_sufficient_content = len(step_text.strip()) > 10
         
+        services_logger.info(f"Есть медицинские термины: {has_medical_terms}")
+        services_logger.info(f"Достаточно контента: {has_sufficient_content}")
+        
         if not (has_medical_terms or has_sufficient_content):
+            services_logger.warning("Фильтрация не пройдена - нет медицинских терминов и недостаточно контента")
             return []
 
         exclude_patterns = [
@@ -509,16 +538,24 @@ class MedicalAssistant:
             'заключение', 'критерии качества', 'библиография'
         ]
 
+        services_logger.info(f"Проверка исключающих паттернов...")
         for pattern in exclude_patterns:
             if pattern in step_title.lower():
+                services_logger.warning(f"Найден исключающий паттерн '{pattern}' в заголовке - пропускаем")
                 return []
+        
+        services_logger.info("Исключающие паттерны не найдены")
 
+        services_logger.info("Формирование списка услуг для отправки в нейросеть...")
         services_list = self.services_df.head(1000).apply(
             lambda row: f"{row['ID']} - {row['Название']}", axis=1
         ).tolist()
-
+        
+        services_logger.info(f"Подготовлено {len(services_list)} услуг для анализа")
         services_text = "\n".join(services_list)
+        services_logger.info(f"Размер текста с услугами: {len(services_text)} символов")
 
+        services_logger.info("Формирование системного промпта...")
         system_prompt = (
             "Ты — медицинский эксперт. Твоя задача — найти релевантные медицинские услуги для описанного этапа диагностики или лечения.\n\n"
             "**ИНСТРУКЦИИ:**\n"
@@ -534,8 +571,14 @@ class MedicalAssistant:
             f"Описание процедур: {step_text[:2000]}\n\n"
             "Найди услуги, которые точно соответствуют описанным медицинским процедурам."
         )
+        
+        services_logger.info(f"Размер промпта: {len(system_prompt)} символов")
+        services_logger.info(f"Обрезанный текст этапа: '{step_text[:2000]}'")
 
         try:
+            services_logger.info("Отправка запроса к нейросети Ollama...")
+            services_logger.info(f"Модель: {OLLAMA_MODEL}")
+            
             response = ollama.chat(
                 model=OLLAMA_MODEL,
                 messages=[{"role": "system", "content": system_prompt}],
@@ -545,16 +588,36 @@ class MedicalAssistant:
                     "num_predict": 512,
                 }
             )
-
+            
+            services_logger.info("Получен ответ от нейросети")
             raw = response['message']['content'].strip()
+            services_logger.info(f"Сырой ответ: '{raw}'")
+            services_logger.info(f"Длина ответа: {len(raw)} символов")
 
             # 🔍 Ищем JSON-массив
+            services_logger.info("Поиск JSON-массива в ответе...")
             match = re.search(r'\[.*?\]', raw, re.DOTALL)
             if match:
-                return json.loads(match.group(0))
+                json_str = match.group(0)
+                services_logger.info(f"Найден JSON: '{json_str}'")
+                try:
+                    result = json.loads(json_str)
+                    services_logger.info(f"JSON успешно распарсен, найдено услуг: {len(result)}")
+                    for i, service in enumerate(result):
+                        services_logger.info(f"Услуга {i+1}: ID={service.get('id', 'N/A')}, Название='{service.get('name', 'N/A')}'")
+                    services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
+                    return result
+                except json.JSONDecodeError as je:
+                    services_logger.error(f"Ошибка парсинга JSON: {je}")
+            else:
+                services_logger.warning("JSON-массив не найден в ответе")
+                
         except Exception as e:
+            services_logger.error(f"Ошибка генерации услуг: {e}")
             print(f"Ошибка генерации JSON: {e}")
 
+        services_logger.info("Возвращаем пустой список")
+        services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
         return []
 
     # ---------- DIALOGUE ----------
