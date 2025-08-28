@@ -31,15 +31,12 @@ services_logger = logging.getLogger('services_generation')
 # ------------------------------------------------------------
 # 2. Лемматизатор (pymorphy2)
 # ------------------------------------------------------------
-import pymorphy2
-morph = pymorphy2.MorphAnalyzer()
-
+# --- Лемматизатор-заглушка (без pymorphy2) ---
+import re
 def lemmatize(text: str) -> str:
-    """Приводим русские слова к нормальной форме."""
-    return ' '.join(
-        morph.parse(word)[0].normal_form
-        for word in re.findall(r'\w+', text.lower())
-    )
+    """Минимальная нормализация: нижний регистр + удаление знаков."""
+    return re.sub(r'[^\w\s]', '', text.lower())
+
 
 # ------------------------------------------------------------
 # 3. Импорт модели Ollama
