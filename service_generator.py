@@ -112,7 +112,7 @@ class ServiceGenerator:
             "Не добавляй пояснений, описаний или markdown.\n\n"
             f"Релевантные услуги:\n{services_text}\n\n"
             f"Этап: {step_title}\n"
-            f"Описание: {step_text[:1000]}...\n\n"
+            f"Описание: {step_text[:5000]}...\n\n"
             "Ответ:"
         )
 
