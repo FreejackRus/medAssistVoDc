@@ -562,32 +562,63 @@ class MedicalAssistant:
                     "temperature": 0.0,
                     "top_p": 0.05,
                     "top_k": 10,
-                    "num_predict": 200,
+                    "num_predict": 2000,
                     "repeat_penalty": 1.1,
                     "stop": ["\n\n", "Объяснение:", "Анализ:", "---"]
                 }
             )
             
             services_logger.info("Получен ответ от нейросети")
-            raw = response['message']['content'].strip()
+            raw = response['message']['content']
             services_logger.info(f"Сырой ответ: '{raw}'")
             services_logger.info(f"Длина ответа: {len(raw)} символов")
 
-            # 🔍 Ищем JSON-массив
+            # 🔍 Ищем JSON-массив (включая неполные)
             services_logger.info("Поиск JSON-массива в ответе...")
+            
+            # Попробуем найти полный JSON-массив
             match = re.search(r'\[.*?\]', raw, re.DOTALL)
-            if match:
+            if not match:
+                # Если полный массив не найден, попробуем найти начало массива
+                match = re.search(r'\[.*', raw, re.DOTALL)
+                if match:
+                    # Попытаемся "закрыть" неполный JSON
+                    json_str = match.group(0)
+                    if not json_str.endswith(']'):
+                        # Удаляем последний неполный объект и закрываем массив
+                        last_complete = json_str.rfind('}')
+                        if last_complete > 0:
+                            json_str = json_str[:last_complete+1] + ']'
+                        else:
+                            json_str = '[]'
+                    services_logger.info(f"Найден неполный JSON, исправлен: '{json_str[:200]}...'")
+                else:
+                    services_logger.warning("JSON-массив не найден в ответе")
+                    return []
+            else:
                 json_str = match.group(0)
-                services_logger.info(f"Найден JSON: '{json_str}'")
-                try:
-                    result = json.loads(json_str)
-                    services_logger.info(f"JSON успешно распарсен, найдено услуг: {len(result)}")
-                    for i, service in enumerate(result):
-                        services_logger.info(f"Услуга {i+1}: ID={service.get('id', 'N/A')}, Название='{service.get('name', 'N/A')}'")
-                    services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
-                    return result
-                except json.JSONDecodeError as je:
-                    services_logger.error(f"Ошибка парсинга JSON: {je}")
+                services_logger.info(f"Найден полный JSON: '{json_str[:200]}...'")
+            
+            try:
+                result = json.loads(json_str)
+                services_logger.info(f"JSON успешно распарсен, найдено услуг: {len(result)}")
+                
+                # Преобразуем формат ответа ИИ в нужный формат
+                formatted_services = []
+                for service in result:
+                    formatted_service = {
+                        'id': str(service.get('service_code', service.get('id', 'N/A'))),
+                        'name': service.get('service_name', service.get('name', 'N/A'))
+                    }
+                    formatted_services.append(formatted_service)
+                    services_logger.info(f"Услуга: ID={formatted_service['id']}, Название='{formatted_service['name'][:50]}...'")
+                
+                services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
+                return formatted_services
+                
+            except json.JSONDecodeError as je:
+                services_logger.error(f"Ошибка парсинга JSON: {je}")
+                services_logger.error(f"Проблемный JSON: '{json_str[:500]}...'")
             else:
                 services_logger.warning("JSON-массив не найден в ответе")
                 
