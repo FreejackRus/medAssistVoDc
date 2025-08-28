@@ -144,7 +144,7 @@ class ServiceGenerator:
         response = requests.post(
             "http://localhost:11434/api/chat",
             json=payload,
-            timeout=120
+            timeout=12000
         )
         response.raise_for_status()
         
