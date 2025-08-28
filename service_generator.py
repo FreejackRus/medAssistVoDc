@@ -134,7 +134,7 @@ class ServiceGenerator:
             "messages": [{"role": "system", "content": prompt}],
             "options": {
                 "temperature": 0.0,
-                "num_predict": 20000,
+                "num_predict": 200,
             #    "stop": ["\n\n", "Объяснение:", "---"]
             },
             "stream": False
