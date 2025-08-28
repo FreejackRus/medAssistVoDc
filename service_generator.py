@@ -115,7 +115,7 @@ class ServiceGenerator:
         payload = {
             "model": OLLAMA_MODEL,
             "messages": [{"role": "system", "content": prompt}],
-            "options": {"temperature": 0.0, "num_predict": 1000},
+            "options": {"temperature": 0.0, "num_predict": 3000},
             "stream": False
         }
 
