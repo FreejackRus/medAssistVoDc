@@ -69,7 +69,7 @@ class ServiceGenerator:
             services_logger.error(f"Ошибка индексации услуг: {e}")
             self.embeddings = None
 
-    def _get_top_services(self, step_text: str, top_k: int = 50) -> pd.DataFrame:
+    def _get_top_services(self, step_text: str, top_k: int = 200) -> pd.DataFrame:
         """Возвращает top_k наиболее релевантных услуг по тексту этапа
         
         Args:
