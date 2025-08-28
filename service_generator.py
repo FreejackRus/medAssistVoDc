@@ -63,7 +63,7 @@ class ServiceGenerator:
         self.embeddings = None
         self.vectorizer = TfidfVectorizer(
             tokenizer=lambda x: lemmatize(x).split(),
-            stop_words=RUSSIAN_STOP_WORDS,
+            stop_words=list(RUSSIAN_STOP_WORDS),
             max_features=3000,
             ngram_range=(1, 2),
             min_df=1
