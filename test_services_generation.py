@@ -9,7 +9,7 @@ import sys
 import pandas as pd
 from service_generator import ServiceGenerator  # ✅ импорт из нового файла
 
-EXCEL_PATH = os.path.join(os.path.dirname(__file__), "services.xlsx")
+EXCEL_PATH =("docs/services.xlsx")
 
 def test_services_generation():
     """Тест генерации услуг для диагностики диабета 1 типа"""
