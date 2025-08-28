@@ -513,38 +513,8 @@ class MedicalAssistant:
         
         services_logger.info(f"Загружено услуг в DataFrame: {len(self.services_df)}")
 
-        # Более мягкая фильтрация - ищем ключевые медицинские термины
-        medical_keywords = ['узи', 'анализ', 'исследование', 'диагностика', 'обследование', 'тест', 'проба', 'рентген', 'томография', 'эндоскопия', 'биопсия', 'пункция', 'мониторинг', 'скрининг']
-        text_lower = step_text.lower()
-        
-        services_logger.info(f"Поиск медицинских ключевых слов в тексте...")
-        found_keywords = [kw for kw in medical_keywords if kw in text_lower]
-        services_logger.info(f"Найденные ключевые слова: {found_keywords}")
-        
-        # Проверяем наличие медицинских терминов или достаточной длины текста
-        has_medical_terms = any(keyword in text_lower for keyword in medical_keywords)
-        has_sufficient_content = len(step_text.strip()) > 10
-        
-        services_logger.info(f"Есть медицинские термины: {has_medical_terms}")
-        services_logger.info(f"Достаточно контента: {has_sufficient_content}")
-        
-        if not (has_medical_terms or has_sufficient_content):
-            services_logger.warning("Фильтрация не пройдена - нет медицинских терминов и недостаточно контента")
-            return []
-
-        exclude_patterns = [
-            'введение', 'определение', 'эпидемиология', 'этиология', 'патогенез',
-            'классификация', 'кодирование', 'список литературы', 'приложение',
-            'заключение', 'критерии качества', 'библиография'
-        ]
-
-        services_logger.info(f"Проверка исключающих паттернов...")
-        for pattern in exclude_patterns:
-            if pattern in step_title.lower():
-                services_logger.warning(f"Найден исключающий паттерн '{pattern}' в заголовке - пропускаем")
-                return []
-        
-        services_logger.info("Исключающие паттерны не найдены")
+        # Убираем всю фильтрацию - ИИ сам выберет релевантные услуги
+        services_logger.info("Фильтрация отключена - ИИ получит все услуги для анализа")
 
         services_logger.info("Формирование списка услуг для отправки в нейросеть...")
         services_list = self.services_df.head(1000).apply(
