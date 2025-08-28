@@ -135,7 +135,7 @@ class ServiceGenerator:
             "options": {
                 "temperature": 0.0,
                 "num_predict": 20000,
-                "stop": ["\n\n", "Объяснение:", "---"]
+            #    "stop": ["\n\n", "Объяснение:", "---"]
             },
             "stream": False
         }
