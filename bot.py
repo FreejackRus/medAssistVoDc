@@ -10,6 +10,8 @@ import fitz
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import pandas as pd
+import numpy as np
+import requests
 
 import ollama  # pip install ollama
 import logging
@@ -22,16 +24,12 @@ CHUNK_SIZE: int = 1_000
 CHUNK_OVERLAP: int = 200
 MAX_INPUT_TOK: int = 135_000
 
-# Настройка логирования для отладки генерации услуг
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('services_debug.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-services_logger = logging.getLogger('services_generation')
+# Импортируем ServiceGenerator из отдельного файла
+try:
+    from service_generator import ServiceGenerator
+except ImportError:
+    print("❌ Не удалось импортировать ServiceGenerator. Убедитесь, что файл service_generator.py существует.")
+    ServiceGenerator = None
 # Улучшенные паттерны для распознавания структуры
 SECTION_PATTERNS = [
     re.compile(r"^(\d+(?:\.\d+)*)\s+([^\n]+)", re.MULTILINE),  # 1.1, 2.3.4, … + title
@@ -69,6 +67,7 @@ class MedicalAssistant:
         
         # Загружаем услуги из Excel файла
         self.services_df = self._load_services_from_excel()
+        self.service_generator = ServiceGenerator(self.services_df) if ServiceGenerator and not self.services_df.empty else None
 
     def _load_services_from_excel(self) -> pd.DataFrame:
         """Загружает услуги из Excel файла"""
@@ -502,133 +501,11 @@ class MedicalAssistant:
     # ---------- SERVICES SELECTION ----------
     def generate_services_for_step(self, step_text: str, step_title: str = "") -> List[Dict[str, str]]:
         """Использует нейросеть для подбора релевантных услуг на основе контекста"""
-        services_logger.info(f"=== НАЧАЛО ГЕНЕРАЦИИ УСЛУГ ===")
-        services_logger.info(f"Заголовок этапа: '{step_title}'")
-        services_logger.info(f"Текст этапа (первые 200 символов): '{step_text[:200]}...'")
-        services_logger.info(f"Длина текста: {len(step_text)} символов")
-        
-        if self.services_df is None or self.services_df.empty:
-            services_logger.warning("Услуги не загружены или DataFrame пустой")
+        if self.service_generator is None:
+            print("⚠️ ServiceGenerator не инициализирован")
             return []
         
-        services_logger.info(f"Загружено услуг в DataFrame: {len(self.services_df)}")
-
-        # Убираем всю фильтрацию - ИИ сам выберет релевантные услуги
-        services_logger.info("Фильтрация отключена - ИИ получит все услуги для анализа")
-
-        services_logger.info("Формирование списка услуг для отправки в нейросеть...")
-        services_list = self.services_df.head(1000).apply(
-            lambda row: f"{row['ID']} - {row['Название']}", axis=1
-        ).tolist()
-        
-        services_logger.info(f"Подготовлено {len(services_list)} услуг для анализа")
-        services_text = "\n".join(services_list)
-        services_logger.info(f"Размер текста с услугами: {len(services_text)} символов")
-
-        services_logger.info("Формирование системного промпта...")
-        system_prompt = (
-            "СТРОГО: Отвечай ТОЛЬКО JSON-массивом! Никаких объяснений!\n\n"
-            "ЗАПРЕЩЕНО:\n"
-            "- Писать описания\n"
-            "- Добавлять комментарии\n"
-            "- Использовать markdown\n"
-            "- Объяснять выбор\n\n"
-            "РАЗРЕШЕНО ТОЛЬКО:\n"
-            "[{\"id\": \"число\", \"name\": \"название\"}]\n\n"
-            "ПРИМЕРЫ ПРАВИЛЬНЫХ ОТВЕТОВ:\n"
-            '[{\"id\": \"123\", \"name\": \"Общий анализ крови\"}]\n'
-            '[{\"id\": \"456\", \"name\": \"УЗИ брюшной полости\"}, {\"id\": \"789\", \"name\": \"Биохимический анализ крови\"}]\n'
-            '[]\n\n'
-            "НЕПРАВИЛЬНО (НЕ ДЕЛАЙ ТАК):\n"
-            '```json\n{\"этап\": \"описание\"}\n```\n'
-            '{\"применение\": \"текст\"}\n\n'
-            f"Услуги (ID - Название):\n{services_text}\n\n"
-            f"Этап диагностики: {step_title}\n"
-            f"Описание этапа: {step_text[:1000]}\n\n"
-            "Ответ (только JSON-массив):"
-        )
-        
-        services_logger.info(f"Размер промпта: {len(system_prompt)} символов")
-        services_logger.info(f"Обрезанный текст этапа: '{step_text[:2000]}'")
-
-        try:
-            services_logger.info("Отправка запроса к нейросети Ollama...")
-            services_logger.info(f"Модель: {OLLAMA_MODEL}")
-            
-            response = ollama.chat(
-                model=OLLAMA_MODEL,
-                messages=[{"role": "system", "content": system_prompt}],
-                options={
-                    "temperature": 0.0,
-                    "top_p": 0.05,
-                    "top_k": 10,
-                    "num_predict": 2000,
-                    "repeat_penalty": 1.1,
-                    "stop": ["\n\n", "Объяснение:", "Анализ:", "---"]
-                }
-            )
-            
-            services_logger.info("Получен ответ от нейросети")
-            raw = response['message']['content']
-            services_logger.info(f"Сырой ответ: '{raw}'")
-            services_logger.info(f"Длина ответа: {len(raw)} символов")
-
-            # 🔍 Ищем JSON-массив (включая неполные)
-            services_logger.info("Поиск JSON-массива в ответе...")
-            
-            # Попробуем найти полный JSON-массив
-            match = re.search(r'\[.*?\]', raw, re.DOTALL)
-            if not match:
-                # Если полный массив не найден, попробуем найти начало массива
-                match = re.search(r'\[.*', raw, re.DOTALL)
-                if match:
-                    # Попытаемся "закрыть" неполный JSON
-                    json_str = match.group(0)
-                    if not json_str.endswith(']'):
-                        # Удаляем последний неполный объект и закрываем массив
-                        last_complete = json_str.rfind('}')
-                        if last_complete > 0:
-                            json_str = json_str[:last_complete+1] + ']'
-                        else:
-                            json_str = '[]'
-                    services_logger.info(f"Найден неполный JSON, исправлен: '{json_str[:200]}...'")
-                else:
-                    services_logger.warning("JSON-массив не найден в ответе")
-                    return []
-            else:
-                json_str = match.group(0)
-                services_logger.info(f"Найден полный JSON: '{json_str[:200]}...'")
-            
-            try:
-                result = json.loads(json_str)
-                services_logger.info(f"JSON успешно распарсен, найдено услуг: {len(result)}")
-                
-                # Преобразуем формат ответа ИИ в нужный формат
-                formatted_services = []
-                for service in result:
-                    formatted_service = {
-                        'id': str(service.get('service_code', service.get('id', 'N/A'))),
-                        'name': service.get('service_name', service.get('name', 'N/A'))
-                    }
-                    formatted_services.append(formatted_service)
-                    services_logger.info(f"Услуга: ID={formatted_service['id']}, Название='{formatted_service['name'][:50]}...'")
-                
-                services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
-                return formatted_services
-                
-            except json.JSONDecodeError as je:
-                services_logger.error(f"Ошибка парсинга JSON: {je}")
-                services_logger.error(f"Проблемный JSON: '{json_str[:500]}...'")
-            else:
-                services_logger.warning("JSON-массив не найден в ответе")
-                
-        except Exception as e:
-            services_logger.error(f"Ошибка генерации услуг: {e}")
-            print(f"Ошибка генерации JSON: {e}")
-
-        services_logger.info("Возвращаем пустой список")
-        services_logger.info("=== КОНЕЦ ГЕНЕРАЦИИ УСЛУГ ===\n")
-        return []
+        return self.service_generator.generate_services_for_step(step_text, step_title)
 
     # ---------- DIALOGUE ----------
     def _generate_dialogue_streaming(self, user_message: str, conversation_history: List[Dict], sections: Dict[str, str], file: TextIO) -> None:
