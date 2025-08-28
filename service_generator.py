@@ -86,7 +86,7 @@ class ServiceGenerator:
             services_logger.error(f"Ошибка индексации услуг: {e}")
             self.embeddings = None
 
-    def _get_top_services(self, step_text: str, top_k: int = 50) -> pd.DataFrame:
+    def _get_top_services(self, step_text: str, top_k: int = 150) -> pd.DataFrame:
         if self.embeddings is None:
             services_logger.warning("Эмбеддинги не созданы, возвращаем первые услуги")
             return self.services_df.head(top_k)
