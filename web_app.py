@@ -82,7 +82,7 @@ async def generate(pdf: UploadFile = File(...)) -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[str, None]:
         # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(pdf_path)
+            None, assistant.load_guidelines, pdf_path
         )
         if not sections:
             yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
@@ -187,7 +187,7 @@ async def dialogue(request: Request) -> StreamingResponse:
                         
                         # Обрабатываем PDF
                         sections = await asyncio.get_running_loop().run_in_executor(
-                            None, assistant.load_guidelines, pdf_path
+                            None, assistant.load_guidelines, Path(pdf_path)
                         )
                         
                         if sections:
@@ -299,7 +299,7 @@ async def start_dialogue(pdf: UploadFile = File(...)) -> Response:
     try:
         # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(pdf_path)
+            None, assistant.load_guidelines, pdf_path
         )
         
         if not sections:
@@ -349,7 +349,7 @@ async def generate_sample() -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[str, None]:
         # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(sample_pdf_path)
+            None, assistant.load_guidelines, sample_pdf_path
         )
         if not sections:
             yield f"data: {json.dumps('❌ Не удалось прочитать образец PDF')}\n\n"
@@ -393,7 +393,7 @@ async def use_sample_pdf() -> Response:
     try:
         # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(sample_pdf_path)
+            None, assistant.load_guidelines, sample_pdf_path
         )
         
         if not sections:
@@ -443,7 +443,7 @@ async def start_dialogue_sample() -> Response:
     try:
         # Загружаем структуру рекомендаций
         sections = await asyncio.get_running_loop().run_in_executor(
-            None, assistant.load_guidelines, str(sample_pdf_path)
+            None, assistant.load_guidelines, sample_pdf_path
         )
         
         if not sections:
