@@ -81,12 +81,15 @@ async def generate(pdf: UploadFile = File(...)) -> StreamingResponse:
 
     async def event_stream() -> AsyncGenerator[str, None]:
         # Загружаем структуру рекомендаций
-        sections = await asyncio.get_running_loop().run_in_executor(
+        success = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, pdf_path
         )
-        if not sections:
+        if not success:
             yield f"data: {json.dumps('❌ Не удалось прочитать PDF')}\n\n"
             return
+        
+        # Получаем разделы после успешной загрузки
+        sections = assistant.get_sections()
 
         q = asyncio.Queue()
         writer = AsyncStreamWriter(q)
@@ -186,11 +189,12 @@ async def dialogue(request: Request) -> StreamingResponse:
                         pdf_path = await download_pdf_from_url(pdf_url)
                         
                         # Обрабатываем PDF
-                        sections = await asyncio.get_running_loop().run_in_executor(
+                        success = await asyncio.get_running_loop().run_in_executor(
                             None, assistant.load_guidelines, Path(pdf_path)
                         )
                         
-                        if sections:
+                        if success:
+                            sections = assistant.get_sections()
                             session["sections"] = sections
                             print(f"DEBUG: PDF успешно обработан, найдено {len(sections)} секций")
                         else:
@@ -298,16 +302,18 @@ async def start_dialogue(pdf: UploadFile = File(...)) -> Response:
 
     try:
         # Загружаем структуру рекомендаций
-        sections = await asyncio.get_running_loop().run_in_executor(
+        success = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, pdf_path
         )
         
-        if not sections:
+        if not success:
             return Response(
                 content=json.dumps({"error": "Не удалось прочитать PDF"}),
                 media_type="application/json",
                 status_code=400
             )
+        
+        sections = assistant.get_sections()
         
         # Создаем новую сессию
         session_id = f"session_{len(dialogue_sessions) + 1}"
@@ -348,12 +354,14 @@ async def generate_sample() -> StreamingResponse:
 
     async def event_stream() -> AsyncGenerator[str, None]:
         # Загружаем структуру рекомендаций
-        sections = await asyncio.get_running_loop().run_in_executor(
+        success = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, sample_pdf_path
         )
-        if not sections:
+        if not success:
             yield f"data: {json.dumps('❌ Не удалось прочитать образец PDF')}\n\n"
             return
+
+        sections = assistant.get_sections()
 
         q = asyncio.Queue()
         writer = AsyncStreamWriter(q)
@@ -392,16 +400,18 @@ async def use_sample_pdf() -> Response:
     
     try:
         # Загружаем структуру рекомендаций
-        sections = await asyncio.get_running_loop().run_in_executor(
+        success = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, sample_pdf_path
         )
         
-        if not sections:
+        if not success:
             return Response(
                 content=json.dumps({"error": "Не удалось прочитать образец PDF"}),
                 media_type="application/json",
                 status_code=400
             )
+        
+        sections = assistant.get_sections()
         
         # Создаем новую сессию для диалога
         session_id = f"session_{len(dialogue_sessions) + 1}"
@@ -442,16 +452,18 @@ async def start_dialogue_sample() -> Response:
     
     try:
         # Загружаем структуру рекомендаций
-        sections = await asyncio.get_running_loop().run_in_executor(
+        success = await asyncio.get_running_loop().run_in_executor(
             None, assistant.load_guidelines, sample_pdf_path
         )
         
-        if not sections:
+        if not success:
             return Response(
                 content=json.dumps({"error": "Не удалось прочитать образец PDF"}),
                 media_type="application/json",
                 status_code=400
             )
+        
+        sections = assistant.get_sections()
         
         # Создаем новую сессию диалога
         session_id = f"session_{len(dialogue_sessions) + 1}"
@@ -890,3 +902,8 @@ async def download_pdf(request: Request) -> Response:
         # Fallback: возвращаем HTML, чтобы увидеть ошибку
         error_html = f"<h2>Ошибка генерации PDF</h2><p>{str(e)}</p><pre>{full_html[:2000]}...</pre>"
         return Response(content=error_html, media_type="text/html")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
