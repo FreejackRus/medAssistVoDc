@@ -19,7 +19,7 @@ from datetime import datetime
 
 # ---------- CONSTANTS ----------
 # Константы для модели Qwen3-30B-A3B-Instruct-2507-GGUF
-OLLAMA_MODEL: str = "Qwen3-30B-A3B-Instruct-2507-GGUF:Q6_K_XL"          # сначала «ollama pull <n>»
+OLLAMA_MODEL: str = "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q6_K_XL"  # полное имя после ollama pull
 SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услугами
 CHUNK_SIZE: int = 2_000
 CHUNK_OVERLAP: int = 400
