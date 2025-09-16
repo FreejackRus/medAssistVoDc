@@ -41,10 +41,7 @@ def lemmatize(text: str) -> str:
 # ------------------------------------------------------------
 # 3. Импорт модели Ollama
 # ------------------------------------------------------------
-try:
-    from bot import OLLAMA_MODEL
-except ImportError:
-    OLLAMA_MODEL: str = "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q8_0"
+from config import OLLAMA_MODEL, OLLAMA_API_URL
 
 # ------------------------------------------------------------
 # 4. Список русских стоп-слов
@@ -121,7 +118,7 @@ class ServiceGenerator:
 
         services_logger.info(f"Отправляем запрос к модели {OLLAMA_MODEL}...")
         response = requests.post(
-            "http://localhost:11434/api/chat",
+            OLLAMA_API_URL,
             json=payload,
             timeout=120
         )
