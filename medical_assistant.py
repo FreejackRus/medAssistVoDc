@@ -107,36 +107,41 @@ class MedicalAssistant:
             logger.error(f"Ошибка при загрузке рекомендаций: {e}")
             return False
     
-    def _generate_streaming(self, user_prompt: str, context: str = "") -> Generator[str, None, None]:
+    def _generate_streaming(self, sections: Dict[str, str], writer) -> None:
         """
-        Генерирует ответ с использованием Ollama API в потоковом режиме
+        Генерирует алгоритм диагностики и лечения в потоковом режиме
         
         Args:
-            user_prompt: Запрос пользователя
-            context: Дополнительный контекст
-            
-        Yields:
-            Части ответа
+            sections: Разделы клинических рекомендаций
+            writer: Объект для записи потокового вывода
         """
         try:
+            # Формируем контекст из разделов
+            context_parts = []
+            for section_name, content in sections.items():
+                if content.strip():
+                    context_parts.append(f"=== {section_name} ===\n{content}")
+            
+            context = "\n\n".join(context_parts)
+            
             # Формируем системный промпт
             system_prompt = SYSTEM_PROMPT
             if context:
                 system_prompt += f"\n\nКонтекст из клинических рекомендаций:\n{context}"
             
-            # Формируем пользовательский промпт
-            full_user_prompt = user_prompt
+            # Формируем пользовательский промпт для генерации алгоритма
+            user_prompt = "Создай подробный алгоритм диагностики и лечения на основе предоставленных клинических рекомендаций."
             if self.diagnosis_name:
-                full_user_prompt = f"Диагноз: {self.diagnosis_name}\n{user_prompt}"
+                user_prompt = f"Диагноз: {self.diagnosis_name}\n{user_prompt}"
             
             # Обрезаем контекст если он слишком длинный
-            trimmed_context = trim_tokens(system_prompt + full_user_prompt)
+            trimmed_context = trim_tokens(system_prompt + user_prompt)
             
             payload = {
                 "model": OLLAMA_MODEL,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": full_user_prompt}
+                    {"role": "user", "content": user_prompt}
                 ],
                 "stream": True,
                 "options": OLLAMA_OPTIONS
@@ -150,7 +155,9 @@ class MedicalAssistant:
             )
             
             if response.status_code != 200:
-                yield f"Ошибка API: {response.status_code} - {response.text}"
+                error_msg = f"Ошибка API: {response.status_code} - {response.text}"
+                writer.write(error_msg)
+                writer.close()
                 return
             
             for line in response.iter_lines():
@@ -160,18 +167,24 @@ class MedicalAssistant:
                         if 'message' in data and 'content' in data['message']:
                             content = data['message']['content']
                             if content:
-                                yield content
+                                writer.write(content)
                         
                         if data.get('done', False):
                             break
                             
                     except json.JSONDecodeError:
                         continue
+            
+            writer.close()
                         
         except requests.exceptions.RequestException as e:
-            yield f"Ошибка соединения с Ollama: {e}"
+            error_msg = f"Ошибка соединения с Ollama: {e}"
+            writer.write(error_msg)
+            writer.close()
         except Exception as e:
-            yield f"Ошибка при генерации ответа: {e}"
+            error_msg = f"Ошибка при генерации ответа: {e}"
+            writer.write(error_msg)
+            writer.close()
     
     def generate_services_for_step(self, step_text: str) -> str:
         """
@@ -192,31 +205,38 @@ class MedicalAssistant:
             logger.error(f"Ошибка при генерации услуг: {e}")
             return f"Ошибка при генерации услуг: {e}"
     
-    def _generate_dialogue_streaming(self, user_message: str) -> Generator[str, None, None]:
+    def _generate_dialogue_streaming(self, user_message: str, conversation_history: list, sections: Dict[str, str], writer) -> None:
         """
-        Генерирует ответ в диалоговом режиме
+        Генерирует ответ в диалоговом режиме с потоковым выводом
         
         Args:
             user_message: Сообщение пользователя
-            
-        Yields:
-            Части ответа
+            conversation_history: История разговора
+            sections: Разделы клинических рекомендаций
+            writer: Объект для записи потокового вывода
         """
         try:
             # Проверяем доступность Ollama
             try:
                 health_response = requests.get("http://localhost:11434/api/tags", timeout=5)
                 if health_response.status_code != 200:
-                    yield "Ошибка: Ollama недоступна. Убедитесь, что сервер запущен."
+                    writer.write("Ошибка: Ollama недоступна. Убедитесь, что сервер запущен.")
+                    writer.close()
                     return
             except requests.exceptions.RequestException:
-                yield "Ошибка: Не удается подключиться к Ollama. Убедитесь, что сервер запущен на localhost:11434."
+                writer.write("Ошибка: Не удается подключиться к Ollama. Убедитесь, что сервер запущен на localhost:11434.")
+                writer.close()
                 return
             
-            # Формируем контекст из рекомендаций
+            # Формируем контекст из разделов
             context = ""
-            if self.guidelines_text:
-                context = f"Клинические рекомендации по диагнозу '{self.diagnosis_name}':\n{trim_tokens(self.guidelines_text, 50000)}"
+            if sections:
+                context_parts = []
+                for section_name, content in sections.items():
+                    if content.strip():
+                        context_parts.append(f"=== {section_name} ===\n{content}")
+                context = f"Клинические рекомендации по диагнозу '{self.diagnosis_name}':\n" + "\n\n".join(context_parts)
+                context = trim_tokens(context, 50000)
             
             # Формируем историю сообщений
             messages = [
@@ -224,7 +244,7 @@ class MedicalAssistant:
             ]
             
             # Добавляем историю разговора (последние 10 сообщений)
-            for msg in self.conversation_history[-10:]:
+            for msg in conversation_history[-10:]:
                 messages.append(msg)
             
             # Добавляем текущее сообщение пользователя
@@ -245,10 +265,11 @@ class MedicalAssistant:
             )
             
             if response.status_code != 200:
-                yield f"Ошибка API: {response.status_code} - {response.text}"
+                error_msg = f"Ошибка API: {response.status_code} - {response.text}"
+                writer.write(error_msg)
+                writer.close()
                 return
             
-            assistant_response = ""
             for line in response.iter_lines():
                 if line:
                     try:
@@ -256,8 +277,7 @@ class MedicalAssistant:
                         if 'message' in data and 'content' in data['message']:
                             content = data['message']['content']
                             if content:
-                                assistant_response += content
-                                yield content
+                                writer.write(content)
                         
                         if data.get('done', False):
                             break
@@ -265,14 +285,24 @@ class MedicalAssistant:
                     except json.JSONDecodeError:
                         continue
             
-            # Сохраняем в историю
-            self.conversation_history.append({"role": "user", "content": user_message})
-            self.conversation_history.append({"role": "assistant", "content": assistant_response})
-            
+            writer.close()
+                        
         except requests.exceptions.RequestException as e:
-            yield f"Ошибка соединения с Ollama: {e}"
+            error_msg = f"Ошибка соединения с Ollama: {e}"
+            writer.write(error_msg)
+            writer.close()
         except Exception as e:
-            yield f"Ошибка при генерации ответа: {e}"
+            error_msg = f"Ошибка при генерации ответа: {e}"
+            writer.write(error_msg)
+            writer.close()
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Ошибка соединения с Ollama: {e}"
+            writer.write(error_msg)
+            writer.close()
+        except Exception as e:
+            error_msg = f"Ошибка при генерации ответа: {e}"
+            writer.write(error_msg)
+            writer.close()
     
     def run(self):
         """
