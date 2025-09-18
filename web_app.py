@@ -800,7 +800,7 @@ async def download_pdf(request: Request) -> Response:
           }}
         }}
         body {{
-          font-family: "DejaVu Sans", "Liberation Sans", sans-serif;
+          font-family: "Arial Unicode MS", "DejaVu Sans", "Liberation Sans", "Times New Roman", serif;
           font-size: 12pt;
           line-height: 1.6;
           color: #1f2937;
@@ -809,6 +809,24 @@ async def download_pdf(request: Request) -> Response:
         }}
         h1, h2, h3 {{
           color: #0c4a6e;
+          font-weight: bold;
+          margin-top: 1.5em;
+          margin-bottom: 0.5em;
+        }}
+        h1 {{
+          font-size: 18pt;
+          border-bottom: 2px solid #0c4a6e;
+          padding-bottom: 0.3em;
+        }}
+        h2 {{
+          font-size: 16pt;
+        }}
+        h3 {{
+          font-size: 14pt;
+        }}
+        p {{
+          margin: 0.5em 0;
+          text-align: justify;
         }}
         pre {{
           background: #f3f4f6;
@@ -817,21 +835,25 @@ async def download_pdf(request: Request) -> Response:
           padding: 12px;
           overflow-x: auto;
           font-size: 0.9em;
+          font-family: "Courier New", monospace;
         }}
         code {{
           background: #e5e7eb;
           padding: 2px 5px;
           border-radius: 4px;
+          font-family: "Courier New", monospace;
         }}
         table {{
           width: 100%;
           border-collapse: collapse;
           margin: 1em 0;
+          font-size: 11pt;
         }}
         th, td {{
           border: 1px solid #d1d5db;
           padding: 8px;
           text-align: left;
+          vertical-align: top;
         }}
         th {{
           background-color: #f3f4f6;
@@ -839,6 +861,25 @@ async def download_pdf(request: Request) -> Response:
         }}
         tr:nth-child(even) {{
           background-color: #f8fafc;
+        }}
+        ul, ol {{
+          margin: 0.5em 0;
+          padding-left: 2em;
+        }}
+        li {{
+          margin: 0.3em 0;
+        }}
+        .diagnosis {{
+          background-color: #eff6ff;
+          border-left: 4px solid #0c4a6e;
+          padding: 1em;
+          margin: 1em 0;
+        }}
+        .recommendation {{
+          background-color: #f0fdf4;
+          border-left: 4px solid #16a34a;
+          padding: 1em;
+          margin: 1em 0;
         }}
       </style>
     </head>
@@ -858,15 +899,67 @@ async def download_pdf(request: Request) -> Response:
             
         # Генерируем PDF с помощью ReportLab
         doc = SimpleDocTemplate(tmp_path, pagesize=A4)
+        
+        # Регистрируем кириллический шрифт
+        try:
+            # Пытаемся использовать системные шрифты Windows
+            from reportlab.pdfbase.pdfmetrics import registerFont
+            from reportlab.pdfbase.ttfonts import TTFont
+            
+            # Регистрируем Arial Unicode MS или другой системный шрифт с поддержкой кириллицы
+            try:
+                registerFont(TTFont('ArialUnicode', 'C:/Windows/Fonts/arial.ttf'))
+                font_name = 'ArialUnicode'
+            except:
+                try:
+                    registerFont(TTFont('DejaVuSans', 'C:/Windows/Fonts/DejaVuSans.ttf'))
+                    font_name = 'DejaVuSans'
+                except:
+                    # Fallback на встроенный шрифт с базовой поддержкой кириллицы
+                    font_name = 'Times-Roman'
+        except Exception as e:
+            print(f"DEBUG: Ошибка регистрации шрифта: {e}")
+            font_name = 'Times-Roman'
+        
+        # Создаем стили с кириллическим шрифтом
         styles = getSampleStyleSheet()
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=12,
+            leading=14,
+            encoding='utf-8'
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading1'],
+            fontName=font_name,
+            fontSize=16,
+            leading=18,
+            encoding='utf-8'
+        )
+        
         story = []
         
-        # Простое преобразование HTML в PDF
-        lines = html_body.split('\n')
+        # Улучшенное преобразование HTML в PDF с поддержкой кириллицы
+        import re
+        
+        # Очищаем HTML теги и конвертируем в текст
+        clean_text = re.sub(r'<[^>]+>', '', html_body)
+        clean_text = clean_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+        
+        lines = clean_text.split('\n')
         for line in lines:
-            if line.strip():
-                story.append(Paragraph(line, styles['Normal']))
-                story.append(Spacer(1, 12))
+            line = line.strip()
+            if line:
+                # Определяем стиль по содержимому
+                if line.startswith('#') or 'диагноз' in line.lower() or 'рекомендации' in line.lower():
+                    story.append(Paragraph(line, heading_style))
+                else:
+                    story.append(Paragraph(line, normal_style))
+                story.append(Spacer(1, 6))
         
         doc.build(story)
         
