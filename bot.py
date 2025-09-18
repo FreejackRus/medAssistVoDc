@@ -19,11 +19,11 @@ from datetime import datetime
 
 # ---------- CONSTANTS ----------
 # Константы для модели Qwen3-30B-A3B-Instruct-2507-GGUF
-OLLAMA_MODEL: str = "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q5_K_XL"  # полное имя после ollama pull
+OLLAMA_MODEL: str = "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_XL"  # полное имя после ollama pull
 SERVICES_FILE: Path = Path("docs/services.xlsx")  # Excel файл с услугами
 CHUNK_SIZE: int = 2_000
 CHUNK_OVERLAP: int = 400
-# Увеличиваем максимальный контекст с учетом возможностей модели (262,144 токена)
+# Увеличиваем максимальный контекст с учетом возможностей модели (262,144 тчокена)
 MAX_INPUT_TOK: int = 200_000  # Увеличено с 135000 для лучшего использования контекста модели
 
 # Импортируем ServiceGenerator из отдельного файла
