@@ -9,7 +9,6 @@ import {
   Activity,
   LogOut,
   Menu,
-  X,
   AlertTriangle,
   UserCircle,
 } from "lucide-react";
@@ -27,6 +26,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ProfileForm } from "@/components/profile/ProfileForm";
+import { canManageUsers } from "@/lib/authz";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 const baseNavItems = [
   { to: "/", icon: FileText, label: "Документы" },
@@ -38,8 +44,7 @@ const baseNavItems = [
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
-  const navItems =
-    user?.role === "admin" || user?.role === "manager"
+  const navItems = canManageUsers(user?.role)
       ? [
           ...baseNavItems,
           { to: "/admin/users", icon: Users, label: "Пользователи" },
@@ -132,34 +137,30 @@ export default function Layout() {
         <SidebarContent />
       </aside>
 
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Mobile sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex-col border-r bg-sidebar transition-transform md:hidden ${
-          mobileOpen ? "flex translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <SidebarContent onNavigate={() => setMobileOpen(false)} />
-      </aside>
-
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile header */}
         <header className="flex items-center gap-3 border-b p-3 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Меню"
-            onClick={() => setMobileOpen((v) => !v)}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Открыть меню"
+                />
+              }
+            >
+              <Menu className="h-5 w-5" />
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="w-64 gap-0 bg-sidebar p-0"
+              showCloseButton={false}
+            >
+              <SheetTitle className="sr-only">Навигация</SheetTitle>
+              <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            </SheetContent>
+          </Sheet>
           <span className="text-sm font-medium">МедАссистент</span>
           <div className="ml-auto">
             <ThemeToggle />

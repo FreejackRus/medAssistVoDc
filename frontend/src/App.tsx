@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router";
 import { useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import Layout from "@/components/layout/Layout";
+import AdminRoute from "@/components/routing/AdminRoute";
 import { useAuth } from "@/hooks/useAuth";
 
 const HomePage = lazy(() => import("@/pages/HomePage"));
@@ -16,6 +17,7 @@ const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const ChangePasswordPage = lazy(() => import("@/pages/ChangePasswordPage"));
 const WelcomePage = lazy(() => import("@/pages/WelcomePage"));
+const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
 function PageLoader() {
   return (
@@ -65,12 +67,11 @@ export default function App() {
           />
           <Route path="clinical-recommendations" element={<ClinicalRecsPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          {(user.role === "admin" || user.role === "manager") && (
+          <Route element={<AdminRoute />}>
             <Route path="admin/users" element={<AdminUsersPage />} />
-          )}
-          {(user.role === "admin" || user.role === "manager") && (
             <Route path="admin/monitoring" element={<MonitoringPage />} />
-          )}
+          </Route>
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </Suspense>

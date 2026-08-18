@@ -10,6 +10,8 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub cors_origins: Vec<String>,
+    pub session_cookie_name: String,
+    pub session_cookie_secure: bool,
 }
 
 impl Config {
@@ -38,6 +40,11 @@ impl Config {
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(3000),
             cors_origins,
+            session_cookie_name: env::var("SESSION_COOKIE_NAME")
+                .unwrap_or_else(|_| "medassist_session".into()),
+            session_cookie_secure: env::var("SESSION_COOKIE_SECURE")
+                .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+                .unwrap_or(false),
         }
     }
 

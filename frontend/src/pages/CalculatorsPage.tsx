@@ -1,29 +1,41 @@
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   Activity,
+  Baby,
+  Brain,
   ChevronRight,
+  Droplets,
+  FlaskConical,
   HeartPulse,
   LayoutGrid,
   List,
-  Pill,
+  Loader2,
+  Search,
+  Stethoscope,
   Ruler,
+  Wind,
 } from "lucide-react";
-import {
-  calculatorGroups,
-  calculators,
-  type CalculatorGroupId,
-} from "@/hooks/useCalculators";
+import { useCalculatorRegistry } from "@/hooks/useCalculators";
 import CalculatorCard from "@/components/calculators/CalculatorCard";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { QueryError } from "@/components/shared/QueryError";
 
 type ViewMode = "groups" | "all";
 
-const groupIcons = {
-  anthropometry: Ruler,
-  "renal-function": Activity,
-  "cardiovascular-risk": HeartPulse,
-  "medication-dosing": Pill,
-} satisfies Record<CalculatorGroupId, typeof Ruler>;
+const groupIcons: Record<string, typeof Ruler> = {
+  "general-practice": Stethoscope,
+  cardiology: HeartPulse,
+  nephrology: Activity,
+  pulmonology: Wind,
+  "emergency-icu": Brain,
+  hepatology: FlaskConical,
+  endocrinology: Droplets,
+  hematology: Droplets,
+  obstetrics: Baby,
+  pediatrics: Baby,
+};
 
 function formatCalculatorCount(count: number) {
   const lastTwoDigits = count % 100;
@@ -36,8 +48,26 @@ function formatCalculatorCount(count: number) {
 }
 
 export default function CalculatorsPage() {
+  const { data: registry, isLoading, error, refetch } = useCalculatorRegistry();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQuery] = useState("");
   const viewMode: ViewMode = searchParams.get("view") === "all" ? "all" : "groups";
+  const normalizedQuery = query.trim().toLocaleLowerCase("ru");
+  const groups = useMemo(
+    () =>
+      (registry?.groups ?? [])
+        .map((group) => ({
+          ...group,
+          calculators: group.calculators.filter((calculator) =>
+            `${calculator.title} ${calculator.description}`
+              .toLocaleLowerCase("ru")
+              .includes(normalizedQuery),
+          ),
+        }))
+        .filter((group) => group.calculators.length > 0),
+    [normalizedQuery, registry?.groups],
+  );
+  const calculators = groups.flatMap((group) => group.calculators);
 
   const setViewMode = (mode: ViewMode) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -83,14 +113,38 @@ export default function CalculatorsPage() {
         </div>
       </div>
 
+      <div className="relative max-w-xl">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          aria-label="Поиск медицинских калькуляторов"
+          className="pl-9"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Поиск по названию или показателю..."
+        />
+      </div>
+
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {error && <QueryError error={error} onRetry={() => void refetch()} />}
+
+      {!isLoading && !error && calculators.length === 0 && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Калькуляторы не найдены.
+        </p>
+      )}
+
+      {!isLoading && !error && calculators.length > 0 && (
+        <>
       {viewMode === "groups" ? (
         <div className="overflow-hidden rounded-lg border bg-card">
-          {calculatorGroups.map((group, index) => {
-            const groupCalculators = calculators.filter(
-              (calculator) => calculator.groupId === group.id,
-            );
+          {groups.map((group, index) => {
+            const groupCalculators = group.calculators;
             const firstCalculator = groupCalculators[0];
-            const GroupIcon = groupIcons[group.id];
+            const GroupIcon = groupIcons[group.id] ?? Stethoscope;
 
             return (
               <Link
@@ -110,11 +164,11 @@ export default function CalculatorsPage() {
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{group.title}</span>
                   <span className="mt-0.5 block text-sm text-muted-foreground">
-                    {group.description}
+                    {formatCalculatorCount(groupCalculators.length)}
                   </span>
                 </span>
                 <span className="hidden shrink-0 text-sm text-muted-foreground sm:block">
-                  {formatCalculatorCount(groupCalculators.length)}
+                  Открыть раздел
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
               </Link>
@@ -127,6 +181,8 @@ export default function CalculatorsPage() {
             <CalculatorCard key={calculator.id} config={calculator} />
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );

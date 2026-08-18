@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch, getAuthToken, setAuthToken } from "@/lib/api";
+import { apiFetch, setUnauthorizedHandler } from "@/lib/api";
+import { HttpError } from "@/lib/httpError";
 
 export interface AuthUser {
   id: string;
@@ -18,13 +19,11 @@ export interface AuthUser {
 }
 
 interface LoginResponse {
-  token: string;
   user: AuthUser;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
-  token: string | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -38,31 +37,30 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(!!token);
+  const [isLoading, setIsLoading] = useState(true);
 
   const clearAuth = useCallback(() => {
-    setAuthToken(null);
-    setToken(null);
     setUser(null);
     qc.clear();
   }, [qc]);
 
   const refreshUser = useCallback(async () => {
-    if (!getAuthToken()) {
-      setUser(null);
-      setIsLoading(false);
-      return;
-    }
     try {
       const next = await apiFetch<AuthUser>("/auth/me");
       setUser(next);
-    } catch {
-      clearAuth();
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 401) {
+        clearAuth();
+      }
     } finally {
       setIsLoading(false);
     }
+  }, [clearAuth]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearAuth);
+    return () => setUnauthorizedHandler(null);
   }, [clearAuth]);
 
   useEffect(() => {
@@ -75,8 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
-      setAuthToken(res.token);
-      setToken(res.token);
       setUser(res.user);
       qc.clear();
     },
@@ -85,9 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      if (getAuthToken()) {
-        await apiFetch("/auth/logout", { method: "POST" });
-      }
+      await apiFetch("/auth/logout", { method: "POST" });
     } finally {
       clearAuth();
     }
@@ -114,8 +108,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         body: JSON.stringify({ token: onboardingToken, new_password: newPassword }),
       });
-      setAuthToken(res.token);
-      setToken(res.token);
       setUser(res.user);
       qc.clear();
     },
@@ -141,7 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      token,
       isLoading,
       login,
       logout,
@@ -150,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateProfile,
       refreshUser,
     }),
-    [changePassword, completeOnboarding, isLoading, login, logout, refreshUser, token, updateProfile, user],
+    [changePassword, completeOnboarding, isLoading, login, logout, refreshUser, updateProfile, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

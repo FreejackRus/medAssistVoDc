@@ -1,23 +1,11 @@
+import { parseSseStream } from "@/lib/sseParser";
+import { HttpError } from "@/lib/httpError";
+
 const BASE_URL = "/api";
-const TOKEN_KEY = "clinical_ai_token";
+let unauthorizedHandler: (() => void) | null = null;
 
-export function getAuthToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setAuthToken(token: string | null) {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(TOKEN_KEY);
-  }
-}
-
-function authHeaders(headers?: HeadersInit): HeadersInit {
-  const next: Record<string, string> = { ...(headers as Record<string, string> | undefined) };
-  const token = getAuthToken();
-  if (token) next.Authorization = `Bearer ${token}`;
-  return next;
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
 }
 
 function humanError(status: number, body: string): string {
@@ -49,28 +37,59 @@ function networkError(e: unknown): Error {
   return e instanceof Error ? e : new Error("Неизвестная ошибка");
 }
 
+async function responseError(res: Response): Promise<HttpError> {
+  const body = await res.text().catch(() => "");
+  const error = new HttpError(res.status, body, humanError(res.status, body));
+  if (res.status === 401) unauthorizedHandler?.();
+  return error;
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
   let res: Response;
   try {
-    const headers: HeadersInit = authHeaders(options?.headers);
+    const headers = new Headers(options?.headers);
     if (options?.body) {
-      (headers as Record<string, string>)["Content-Type"] ??= "application/json";
+      if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     }
     res = await fetch(`${BASE_URL}${path}`, {
       ...options,
       headers,
+      credentials: "include",
     });
   } catch (e) {
     throw networkError(e);
   }
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(humanError(res.status, body));
+    throw await responseError(res);
   }
   return res.json();
+}
+
+export async function apiBlob(
+  path: string,
+  options?: RequestInit,
+): Promise<Blob> {
+  let res: Response;
+  try {
+    const headers = new Headers(options?.headers);
+    if (options?.body && !(options.body instanceof FormData)) {
+      if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    }
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
+  } catch (e) {
+    throw networkError(e);
+  }
+  if (!res.ok) {
+    throw await responseError(res);
+  }
+  return res.blob();
 }
 
 export async function apiUpload<T>(
@@ -83,15 +102,14 @@ export async function apiUpload<T>(
     res = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
       body: formData,
-      headers: authHeaders(),
       signal,
+      credentials: "include",
     });
   } catch (e) {
     throw networkError(e);
   }
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(humanError(res.status, body));
+    throw await responseError(res);
   }
   return res.json();
 }
@@ -101,78 +119,15 @@ export async function* readSSE(
   body: unknown,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE_URL}${path}`, {
+  yield* readTokenStream(
+    path,
+    {
       method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal,
-    });
-  } catch (e) {
-    throw networkError(e);
-  }
-  if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(humanError(res.status, errBody));
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "message";
-  let deferredError: Error | null = null;
-
-  const handleLine = function* (line: string): Generator<string> {
-    if (line === "") {
-      currentEvent = "message";
-      return;
-    }
-    if (line.startsWith("event: ")) {
-      currentEvent = line.slice(7).trim();
-      return;
-    }
-    if (!line.startsWith("data: ")) return;
-    const raw = line.slice(6);
-    if (currentEvent === "save_error" || currentEvent === "error") {
-      let message =
-        currentEvent === "save_error"
-          ? "Не удалось сохранить результат"
-          : "Генерация завершилась ошибкой";
-      try {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed === "string") message = parsed;
-      } catch {
-        // keep default message
-      }
-      deferredError = new Error(message);
-      return;
-    }
-    try {
-      yield JSON.parse(raw);
-    } catch {
-      // skip malformed SSE data
-    }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      yield* handleLine(line);
-    }
-  }
-
-  if (buffer.length > 0) {
-    yield* handleLine(buffer);
-  }
-
-  if (deferredError) throw deferredError;
+    },
+  );
 }
 
 export async function* readUploadSSE(
@@ -180,75 +135,61 @@ export async function* readUploadSSE(
   formData: FormData,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
+  yield* readTokenStream(
+    path,
+    {
+      method: "POST",
+      body: formData,
+      signal,
+    },
+  );
+}
+
+async function openStream(path: string, options: RequestInit): Promise<ReadableStream<Uint8Array>> {
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: formData,
-      signal,
+      ...options,
+      credentials: "include",
     });
   } catch (e) {
     throw networkError(e);
   }
   if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(humanError(res.status, errBody));
+    throw await responseError(res);
   }
+  return res.body;
+}
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "message";
+async function* readTokenStream(
+  path: string,
+  options: RequestInit,
+): AsyncGenerator<string> {
+  const stream = await openStream(path, options);
   let deferredError: Error | null = null;
 
-  const handleLine = function* (line: string): Generator<string> {
-    if (line === "") {
-      currentEvent = "message";
-      return;
-    }
-    if (line.startsWith("event: ")) {
-      currentEvent = line.slice(7).trim();
-      return;
-    }
-    if (!line.startsWith("data: ")) return;
-    const raw = line.slice(6);
-    if (currentEvent === "save_error" || currentEvent === "error") {
+  for await (const frame of parseSseStream(stream, "message")) {
+    if (frame.event === "save_error" || frame.event === "error") {
       let message =
-        currentEvent === "save_error"
+        frame.event === "save_error"
           ? "Не удалось сохранить результат"
           : "Генерация завершилась ошибкой";
       try {
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(frame.data);
         if (typeof parsed === "string") message = parsed;
       } catch {
-        // keep default message
+        // Keep the localized fallback.
       }
       deferredError = new Error(message);
-      return;
+      continue;
     }
+
     try {
-      yield JSON.parse(raw);
+      const parsed: unknown = JSON.parse(frame.data);
+      if (typeof parsed === "string") yield parsed;
     } catch {
-      // skip malformed SSE data
+      // Skip malformed SSE data.
     }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      yield* handleLine(line);
-    }
-  }
-
-  if (buffer.length > 0) {
-    yield* handleLine(buffer);
   }
 
   if (deferredError) throw deferredError;
@@ -264,94 +205,24 @@ export async function* readResumeSSE(
   path: string,
   signal?: AbortSignal,
 ): AsyncGenerator<ResumeStreamEvent> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      headers: authHeaders(),
-      signal,
-    });
-  } catch (e) {
-    throw networkError(e);
-  }
-  if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(humanError(res.status, errBody));
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "token";
-  let currentId = 0;
-  let dataLines: string[] = [];
-
-  const dispatch = (): ResumeStreamEvent | null => {
-    if (dataLines.length === 0) {
-      currentEvent = "token";
-      currentId = 0;
-      return null;
-    }
-
-    const event =
-      currentEvent === "done" || currentEvent === "error" ? currentEvent : "token";
-    const raw = dataLines.join("\n");
+  const stream = await openStream(path, {
+    signal,
+  });
+  for await (const frame of parseSseStream(stream, "token")) {
+    const event = frame.event === "done" || frame.event === "error" ? frame.event : "token";
     let content = "";
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(frame.data);
       if (typeof parsed === "string") content = parsed;
     } catch {
-      content = raw;
+      content = frame.data;
     }
-
-    const result: ResumeStreamEvent = {
-      seq: currentId,
+    yield {
+      seq: frame.id,
       event,
       content,
     };
-    currentEvent = "token";
-    currentId = 0;
-    dataLines = [];
-    return result;
-  };
-
-  const handleLine = (line: string): ResumeStreamEvent | null => {
-    if (line === "") return dispatch();
-    if (line.startsWith("id: ")) {
-      const parsed = Number.parseInt(line.slice(4).trim(), 10);
-      currentId = Number.isFinite(parsed) ? parsed : 0;
-      return null;
-    }
-    if (line.startsWith("event: ")) {
-      currentEvent = line.slice(7).trim();
-      return null;
-    }
-    if (line.startsWith("data: ")) {
-      dataLines.push(line.slice(6));
-    }
-    return null;
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const rawLine of lines) {
-      const event = handleLine(rawLine.replace(/\r$/, ""));
-      if (event) yield event;
-    }
   }
-
-  if (buffer.length > 0) {
-    const event = handleLine(buffer.replace(/\r$/, ""));
-    if (event) yield event;
-  }
-
-  const event = dispatch();
-  if (event) yield event;
 }
 
 export interface AccountEvent {
@@ -364,84 +235,19 @@ export async function* readAccountEvents(
   after = 0,
   signal?: AbortSignal,
 ): AsyncGenerator<AccountEvent> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE_URL}/events?after=${after}`, {
-      headers: authHeaders(),
-      signal,
-    });
-  } catch (e) {
-    throw networkError(e);
-  }
-  if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(humanError(res.status, errBody));
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "message";
-  let currentId = 0;
-  let dataLines: string[] = [];
-
-  const dispatch = (): AccountEvent | null => {
-    if (dataLines.length === 0) {
-      currentEvent = "message";
-      currentId = 0;
-      return null;
-    }
-    const raw = dataLines.join("\n");
+  const stream = await openStream(`/events?after=${after}`, {
+    signal,
+  });
+  for await (const frame of parseSseStream(stream, "message")) {
     let payload: Record<string, unknown> = {};
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(frame.data);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         payload = parsed as Record<string, unknown>;
       }
     } catch {
       payload = {};
     }
-    const result = { id: currentId, event: currentEvent, payload };
-    currentEvent = "message";
-    currentId = 0;
-    dataLines = [];
-    return result;
-  };
-
-  const handleLine = (line: string): AccountEvent | null => {
-    if (line === "") return dispatch();
-    if (line.startsWith("id: ")) {
-      const parsed = Number.parseInt(line.slice(4).trim(), 10);
-      currentId = Number.isFinite(parsed) ? parsed : 0;
-      return null;
-    }
-    if (line.startsWith("event: ")) {
-      currentEvent = line.slice(7).trim();
-      return null;
-    }
-    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
-    return null;
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const rawLine of lines) {
-      const event = handleLine(rawLine.replace(/\r$/, ""));
-      if (event) yield event;
-    }
+    yield { id: frame.id, event: frame.event, payload };
   }
-
-  if (buffer.length > 0) {
-    const event = handleLine(buffer.replace(/\r$/, ""));
-    if (event) yield event;
-  }
-
-  const event = dispatch();
-  if (event) yield event;
 }

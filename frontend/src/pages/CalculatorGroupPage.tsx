@@ -1,21 +1,37 @@
 import { Link, Navigate, useNavigate, useParams } from "react-router";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2 } from "lucide-react";
 import CalculatorCard from "@/components/calculators/CalculatorCard";
 import { Select } from "@/components/ui/select";
-import { calculatorGroups, calculators } from "@/hooks/useCalculators";
+import { useCalculatorRegistry } from "@/hooks/useCalculators";
 import { cn } from "@/lib/utils";
+import { QueryError } from "@/components/shared/QueryError";
 
 export default function CalculatorGroupPage() {
   const navigate = useNavigate();
   const { groupId, calculatorId } = useParams();
-  const group = calculatorGroups.find((item) => item.id === groupId);
-  const groupCalculators = calculators.filter(
-    (calculator) => calculator.groupId === groupId,
-  );
+  const { data: registry, isLoading, error, refetch } = useCalculatorRegistry();
+  const group = registry?.groups.find((item) => item.id === groupId);
+  const groupCalculators = group?.calculators ?? [];
   const firstCalculator = groupCalculators[0];
   const activeCalculator = groupCalculators.find(
     (calculator) => calculator.id === calculatorId,
   );
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 sm:p-6">
+        <QueryError error={error} onRetry={() => void refetch()} />
+      </div>
+    );
+  }
 
   if (!group || !firstCalculator) {
     return (
@@ -59,7 +75,9 @@ export default function CalculatorGroupPage() {
           </Link>
           <div>
             <h2 className="text-2xl font-bold">{group.title}</h2>
-            <p className="text-sm text-muted-foreground">{group.description}</p>
+            <p className="text-sm text-muted-foreground">
+              Калькуляторов в разделе: {groupCalculators.length}
+            </p>
           </div>
         </div>
 

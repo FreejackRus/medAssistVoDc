@@ -1,4 +1,8 @@
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::State,
+    http::{HeaderMap, HeaderValue, header},
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -48,7 +52,6 @@ pub struct AuthUserResponse {
 
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
-    pub token: String,
     pub user: AuthUserResponse,
 }
 
@@ -56,7 +59,7 @@ pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<(HeaderMap, Json<LoginResponse>), AppError> {
     let username = body.username.trim();
     if username.is_empty() || body.password.is_empty() {
         return Err(AppError::BadRequest("Введите логин и пароль".into()));
@@ -108,10 +111,13 @@ pub async fn login(
     )
     .await?;
 
-    Ok(Json(LoginResponse {
-        token,
-        user: user_response(&state, &row.0, username, &row.2, row.3).await?,
-    }))
+    let response_headers = session_cookie_headers(&state, &token)?;
+    Ok((
+        response_headers,
+        Json(LoginResponse {
+            user: user_response(&state, &row.0, username, &row.2, row.3).await?,
+        }),
+    ))
 }
 
 pub async fn me(
@@ -133,7 +139,7 @@ pub async fn me(
 pub async fn logout(
     State(state): State<AppState>,
     user: AuthUser,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), AppError> {
     sqlx::query("DELETE FROM auth_sessions WHERE id = ?")
         .bind(&user.session_id)
         .execute(&state.db)
@@ -147,7 +153,10 @@ pub async fn logout(
         serde_json::json!({ "active_sessions": active_sessions(&state, &user.id).await? }),
     )
     .await?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok((
+        clear_session_cookie_headers(&state)?,
+        Json(serde_json::json!({ "ok": true })),
+    ))
 }
 
 pub async fn change_password(
@@ -199,7 +208,7 @@ pub async fn complete_onboarding(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<CompleteOnboardingRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<(HeaderMap, Json<LoginResponse>), AppError> {
     validate_new_password(&body.new_password)?;
     let token_hash = auth::hash_token(body.token.trim());
     let row = sqlx::query_as::<_, (String, String, String)>(
@@ -255,10 +264,13 @@ pub async fn complete_onboarding(
     )
     .await?;
 
-    Ok(Json(LoginResponse {
-        token,
-        user: user_response(&state, &row.0, &row.1, &row.2, false).await?,
-    }))
+    let response_headers = session_cookie_headers(&state, &token)?;
+    Ok((
+        response_headers,
+        Json(LoginResponse {
+            user: user_response(&state, &row.0, &row.1, &row.2, false).await?,
+        }),
+    ))
 }
 
 pub async fn update_profile(
@@ -372,4 +384,63 @@ fn clean_optional(value: Option<String>, max_len: usize) -> Option<String> {
     value
         .map(|v| v.trim().chars().take(max_len).collect::<String>())
         .filter(|v| !v.is_empty())
+}
+
+fn session_cookie_headers(state: &AppState, token: &str) -> Result<HeaderMap, AppError> {
+    let cookie = session_cookie_value(
+        &state.config.session_cookie_name,
+        token,
+        2_592_000,
+        state.config.session_cookie_secure,
+    );
+    cookie_header(cookie)
+}
+
+fn clear_session_cookie_headers(state: &AppState) -> Result<HeaderMap, AppError> {
+    let cookie = session_cookie_value(
+        &state.config.session_cookie_name,
+        "",
+        0,
+        state.config.session_cookie_secure,
+    );
+    cookie_header(cookie)
+}
+
+fn session_cookie_value(name: &str, token: &str, max_age: u32, secure: bool) -> String {
+    let secure_attribute = if secure { "; Secure" } else { "" };
+    format!(
+        "{name}={token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age={max_age}{secure_attribute}"
+    )
+}
+
+fn cookie_header(cookie: String) -> Result<HeaderMap, AppError> {
+    let value = HeaderValue::from_str(&cookie)
+        .map_err(|error| AppError::Internal(format!("Failed to create session cookie: {error}")))?;
+    let mut headers = HeaderMap::new();
+    headers.insert(header::SET_COOKIE, value);
+    Ok(headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_cookie_has_security_attributes() {
+        let value = session_cookie_value("session", "secret", 2_592_000, true);
+        assert!(value.contains("HttpOnly"));
+        assert!(value.contains("SameSite=Strict"));
+        assert!(value.contains("Path=/api"));
+        assert!(value.contains("Max-Age=2592000"));
+        assert!(value.contains("Secure"));
+    }
+
+    #[test]
+    fn clear_cookie_expires_same_scope() {
+        let value = session_cookie_value("session", "", 0, false);
+        assert!(value.starts_with("session=;"));
+        assert!(value.contains("Path=/api"));
+        assert!(value.contains("Max-Age=0"));
+        assert!(!value.contains("Secure"));
+    }
 }

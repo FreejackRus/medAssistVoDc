@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useSessions, useCreateSession, useDeleteSession, type ChatSession } from "@/hooks/useChat";
+import { QueryError } from "@/components/shared/QueryError";
 
 interface Props {
   documentId: string;
@@ -13,15 +14,19 @@ interface Props {
 }
 
 export default function SessionList({ documentId, activeSessionId, onSelectSession }: Props) {
-  const { data: sessions, isLoading } = useSessions(documentId);
+  const { data: sessions, isLoading, error, refetch } = useSessions(documentId);
   const createSession = useCreateSession();
   const deleteSession = useDeleteSession();
   const { toast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<ChatSession | null>(null);
 
   const handleCreate = async () => {
-    const session = await createSession.mutateAsync(documentId);
-    onSelectSession(session);
+    try {
+      const session = await createSession.mutateAsync(documentId);
+      onSelectSession(session);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Не удалось создать сессию", "error");
+    }
   };
 
   const handleDeleteConfirm = () => {
@@ -52,7 +57,10 @@ export default function SessionList({ documentId, activeSessionId, onSelectSessi
           {isLoading && (
             <p className="text-xs text-muted-foreground p-2">Загрузка...</p>
           )}
-          {sessions?.length === 0 && !isLoading && (
+          {error && (
+            <QueryError error={error} onRetry={() => void refetch()} className="p-3 text-xs" />
+          )}
+          {sessions?.length === 0 && !isLoading && !error && (
             <p className="text-xs text-muted-foreground p-2">
               Нет сессий. Создайте новую.
             </p>

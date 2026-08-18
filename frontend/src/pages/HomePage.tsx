@@ -8,9 +8,10 @@ import DocumentList from "@/components/documents/DocumentList";
 import AlgorithmView from "@/components/algorithm/AlgorithmView";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { QueryError } from "@/components/shared/QueryError";
 
 export default function HomePage() {
-  const { data: docs } = useDocuments();
+  const { data: docs, error, refetch } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 250);
@@ -34,7 +35,9 @@ export default function HomePage() {
         </p>
       </div>
 
-      {!hasDocs ? (
+      {error ? (
+        <QueryError error={error} onRetry={() => void refetch()} />
+      ) : !hasDocs ? (
         <>
           <UploadZone />
 

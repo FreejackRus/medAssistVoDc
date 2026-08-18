@@ -131,7 +131,7 @@ export function useMessages(sessionId: string | null) {
 
       void run();
     }
-  }, [sessionId, runningSignature, qc]);
+  }, [sessionId, runningSignature, qc, query.data]);
 
   useEffect(
     () => () => {

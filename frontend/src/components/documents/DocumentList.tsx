@@ -3,6 +3,7 @@ import { useDocuments, useDeleteDocument, useRetryDocument, type Document } from
 import { useToast } from "@/components/ui/toast";
 import DocumentCard from "./DocumentCard";
 import { Loader2 } from "lucide-react";
+import { QueryError } from "@/components/shared/QueryError";
 
 interface Props {
   selectedId: string | null;
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export default function DocumentList({ selectedId, onSelect, search }: Props) {
-  const { data: docs, isLoading } = useDocuments();
+  const { data: docs, isLoading, error, refetch } = useDocuments();
   const deleteMutation = useDeleteDocument();
   const retryMutation = useRetryDocument();
   const { toast } = useToast();
@@ -99,6 +100,10 @@ export default function DocumentList({ selectedId, onSelect, search }: Props) {
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
+  }
+
+  if (error) {
+    return <QueryError error={error} onRetry={() => void refetch()} />;
   }
 
   if (!docs?.length) {

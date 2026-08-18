@@ -14,6 +14,7 @@ import {
   type SystemMetricSample,
   type UserActivitySummary,
 } from "@/hooks/useMonitoring";
+import { QueryError } from "@/components/shared/QueryError";
 
 const actionLabels: Record<string, string> = {
   user_created: "Пользователь создан",
@@ -41,7 +42,7 @@ export default function MonitoringPage() {
   const [activeTab, setActiveTab] = useState<MonitoringTab>("overview");
   const [from, setFrom] = useState(() => toInputDate(new Date(Date.now() - 24 * 60 * 60 * 1000)));
   const [to, setTo] = useState(() => toInputDate(new Date()));
-  const { data, isLoading, refetch, isFetching } = useMonitoring(from, to);
+  const { data, isLoading, error, refetch, isFetching } = useMonitoring(from, to);
 
   const history = useMemo(() => {
     const map = new Map((data?.history ?? []).map((item) => [item.action, item.count]));
@@ -109,7 +110,8 @@ export default function MonitoringPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {visibleTab === "overview" && (
+        {error && <QueryError error={error} onRetry={() => void refetch()} />}
+        {!error && visibleTab === "overview" && (
           <div className="space-y-3">
             <CurrentStatsCards current={data?.current} />
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)] xl:items-start">
@@ -126,14 +128,14 @@ export default function MonitoringPage() {
           </div>
         )}
 
-        {visibleTab === "load" && isAdmin && (
+        {!error && visibleTab === "load" && isAdmin && (
           <div className="grid gap-3 xl:grid-cols-[minmax(360px,0.75fr)_minmax(0,1.25fr)] xl:items-start">
             {data?.system && <SystemLoadCard system={data.system} />}
             <LoadHistoryCard metrics={data?.metrics ?? []} isLoading={isLoading} />
           </div>
         )}
 
-        {visibleTab === "activity" && (
+        {!error && visibleTab === "activity" && (
           <div className="space-y-3">
             {isAdmin && <CurrentStatsCards current={data?.current} />}
             {isAdmin ? (
@@ -147,7 +149,7 @@ export default function MonitoringPage() {
           </div>
         )}
 
-        {visibleTab === "logs" && <LogsCard logs={data?.logs ?? []} />}
+        {!error && visibleTab === "logs" && <LogsCard logs={data?.logs ?? []} />}
       </div>
     </div>
   );

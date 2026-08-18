@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useAdminUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/toast";
+import { QueryError } from "@/components/shared/QueryError";
 
 const roleLabels = {
   admin: "Администратор",
@@ -62,7 +63,7 @@ interface EditState {
 
 export default function AdminUsersPage() {
   const { user } = useAuth();
-  const { data: users, isLoading } = useAdminUsers();
+  const { data: users, isLoading, error, refetch } = useAdminUsers();
   const createUser = useCreateUser();
   const resetPassword = useResetUserPassword();
   const deleteUser = useDeleteUser();
@@ -353,6 +354,8 @@ export default function AdminUsersPage() {
         <div className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
+      ) : error ? (
+        <QueryError error={error} onRetry={() => void refetch()} />
       ) : sortedFiltered.length === 0 ? (
         <div className="rounded-md border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
           Пользователи по выбранным фильтрам не найдены.

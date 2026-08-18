@@ -6,13 +6,14 @@ import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import MarkdownRenderer from "@/components/shared/MarkdownRenderer";
 import { useMessages, useSendMessage, type ChatMessage } from "@/hooks/useChat";
+import { QueryError } from "@/components/shared/QueryError";
 
 interface Props {
   sessionId: string;
 }
 
 export default function ChatWindow({ sessionId }: Props) {
-  const { data: messages, isLoading } = useMessages(sessionId);
+  const { data: messages, isLoading, error: queryError, refetch } = useMessages(sessionId);
   const { streamContent, isStreaming, error, send, pendingMessage, pendingFiles, retry, canRetry } = useSendMessage(sessionId);
   const hasPersistedRunning = messages?.some((msg) => msg.status === "running") ?? false;
   const showLocalPending = !!pendingMessage && !hasPersistedRunning;
@@ -36,7 +37,10 @@ export default function ChatWindow({ sessionId }: Props) {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )}
-          {!isLoading && messages?.length === 0 && !showLocalPending && (
+          {queryError && (
+            <QueryError error={queryError} onRetry={() => void refetch()} />
+          )}
+          {!isLoading && !queryError && messages?.length === 0 && !showLocalPending && (
             <div className="py-8 text-center">
               <p className="text-sm text-muted-foreground mb-4">
                 Задайте вопрос по загруженному документу, например:

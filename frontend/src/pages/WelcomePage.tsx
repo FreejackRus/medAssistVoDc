@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { KeyRound, Loader2 } from "lucide-react";
@@ -10,15 +10,23 @@ import { useAuth } from "@/hooks/useAuth";
 export default function WelcomePage() {
   const { completeOnboarding } = useAuth();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const token = useMemo(() => params.get("token") ?? "", [params]);
+  const [params, setParams] = useSearchParams();
+  const tokenRef = useRef(params.get("token") ?? "");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!params.has("token")) return;
+    const sanitized = new URLSearchParams(params);
+    sanitized.delete("token");
+    setParams(sanitized, { replace: true });
+  }, [params, setParams]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const token = tokenRef.current;
     if (!token) {
       setError("В ссылке отсутствует токен приглашения");
       return;

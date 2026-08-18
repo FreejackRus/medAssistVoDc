@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, getAuthToken, readResumeSSE, readSSE } from "@/lib/api";
+import { apiBlob, apiFetch, readResumeSSE, readSSE } from "@/lib/api";
 import { createTextSmoother } from "@/lib/textSmoother";
 
 export interface Algorithm {
@@ -213,28 +213,11 @@ export function algorithmPdfFilename(documentName: string): string {
 }
 
 export async function exportPdf(markdown: string, documentName: string): Promise<void> {
-  let res: Response;
-  const token = getAuthToken();
   const filename = algorithmPdfFilename(documentName);
-
-  try {
-    res = await fetch("/api/algorithms/export-pdf", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ markdown }),
-    });
-  } catch {
-    throw new Error("Нет соединения с сервером");
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(body || "Ошибка экспорта PDF");
-  }
-
-  const blob = await res.blob();
+  const blob = await apiBlob("/algorithms/export-pdf", {
+    method: "POST",
+    body: JSON.stringify({ markdown }),
+  });
   if (blob.size === 0) {
     throw new Error("Сервер вернул пустой PDF");
   }

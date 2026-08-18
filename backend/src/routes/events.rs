@@ -39,6 +39,10 @@ pub async fn stream(
 
         loop {
             if ticks % 30 == 0 {
+                let session_active = session_is_active(&pool, &session_id).await.unwrap_or(false);
+                if !session_active {
+                    return;
+                }
                 if let Err(e) = sqlx::query("UPDATE auth_sessions SET last_seen_at = datetime('now') WHERE id = ?")
                     .bind(&session_id)
                     .execute(&pool)
@@ -87,6 +91,15 @@ pub async fn stream(
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from_stream(stream))
         .map_err(|e| AppError::Internal(format!("Failed to build event stream: {e}")))
+}
+
+async fn session_is_active(pool: &SqlitePool, session_id: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE id = ? AND expires_at > datetime('now'))",
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await
 }
 
 pub async fn emit_account_event(
@@ -147,4 +160,37 @@ fn format_event(id: i64, event_type: &str, payload: Value) -> Bytes {
         "id: {id}\nevent: {event_type}\ndata: {}\n\n",
         payload
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn revoked_and_expired_sessions_stop_event_streams() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE auth_sessions (id TEXT PRIMARY KEY, expires_at TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO auth_sessions (id, expires_at) VALUES ('active', datetime('now', '+1 hour')), ('expired', datetime('now', '-1 hour'))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert!(session_is_active(&pool, "active").await.unwrap());
+        assert!(!session_is_active(&pool, "expired").await.unwrap());
+        sqlx::query("DELETE FROM auth_sessions WHERE id = 'active'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!session_is_active(&pool, "active").await.unwrap());
+    }
 }

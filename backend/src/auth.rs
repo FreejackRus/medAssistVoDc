@@ -4,7 +4,7 @@ use argon2::{
 };
 use axum::{
     extract::FromRequestParts,
-    http::{HeaderMap, request::Parts},
+    http::{HeaderMap, Method, header, request::Parts},
 };
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -52,7 +52,11 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = bearer_token(&parts.headers)?;
+        let (token, from_cookie) =
+            session_token(&parts.headers, &state.config.session_cookie_name)?;
+        if from_cookie {
+            validate_cookie_origin(&parts.method, &parts.headers, &state.config.cors_origins)?;
+        }
         let token_hash = hash_token(&token);
 
         let row = sqlx::query_as::<_, (String, String, String, bool, String)>(
@@ -192,6 +196,47 @@ pub async fn ensure_bootstrap_admin(pool: &SqlitePool) {
     }
 }
 
+fn session_token(headers: &HeaderMap, cookie_name: &str) -> Result<(String, bool), AppError> {
+    if let Some(token) = cookie_token(headers, cookie_name) {
+        return Ok((token, true));
+    }
+    bearer_token(headers).map(|token| (token, false))
+}
+
+fn cookie_token(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (name, value) = cookie.trim().split_once('=')?;
+                (name == cookie_name && !value.trim().is_empty()).then(|| value.trim().to_string())
+            })
+        })
+}
+
+fn validate_cookie_origin(
+    method: &Method,
+    headers: &HeaderMap,
+    allowed_origins: &[String],
+) -> Result<(), AppError> {
+    if matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS) {
+        return Ok(());
+    }
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    else {
+        // Non-browser clients may omit Origin. Browser requests include it for
+        // mutating fetches and are checked against the explicit allowlist.
+        return Ok(());
+    };
+    if allowed_origins.iter().any(|allowed| allowed == origin) {
+        return Ok(());
+    }
+    Err(AppError::Forbidden("Недопустимый источник запроса".into()))
+}
+
 fn bearer_token(headers: &HeaderMap) -> Result<String, AppError> {
     let value = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -208,4 +253,54 @@ fn bearer_token(headers: &HeaderMap) -> Result<String, AppError> {
         ));
     }
     Ok(token.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cookie_token_takes_precedence_over_legacy_bearer() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            "other=x; medassist_session=cookie-token".parse().unwrap(),
+        );
+        headers.insert(
+            header::AUTHORIZATION,
+            "Bearer legacy-token".parse().unwrap(),
+        );
+
+        assert_eq!(
+            session_token(&headers, "medassist_session").unwrap(),
+            ("cookie-token".into(), true)
+        );
+    }
+
+    #[test]
+    fn bearer_remains_available_during_migration() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            "Bearer legacy-token".parse().unwrap(),
+        );
+
+        assert_eq!(
+            session_token(&headers, "medassist_session").unwrap(),
+            ("legacy-token".into(), false)
+        );
+    }
+
+    #[test]
+    fn rejects_cross_origin_cookie_mutation() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ORIGIN, "https://attacker.example".parse().unwrap());
+        let allowed = vec!["https://medical.example".to_string()];
+
+        assert!(matches!(
+            validate_cookie_origin(&Method::POST, &headers, &allowed),
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(validate_cookie_origin(&Method::GET, &headers, &allowed).is_ok());
+    }
 }

@@ -83,5 +83,6 @@ export function useMonitoring(from: string, to: string) {
     queryFn: () =>
       apiFetch(`/monitoring?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 }

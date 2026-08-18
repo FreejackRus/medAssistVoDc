@@ -49,10 +49,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
+      <div
+        className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2"
+        aria-label="Уведомления"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
+            role={t.type === "error" ? "alert" : "status"}
+            aria-live={t.type === "error" ? "assertive" : "polite"}
             className={cn(
               "flex items-center gap-2 rounded-lg border bg-background px-4 py-3 text-sm shadow-lg animate-in slide-in-from-right-5 fade-in",
               t.type === "error" && "border-destructive/30",
@@ -63,6 +68,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <span className="max-w-xs">{t.message}</span>
             {t.action && (
               <button
+                type="button"
                 onClick={() => {
                   t.action!.onClick();
                   dismiss(t.id);
@@ -73,10 +79,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               </button>
             )}
             <button
+              type="button"
               onClick={() => dismiss(t.id)}
               className="ml-2 text-muted-foreground hover:text-foreground"
+              aria-label="Закрыть уведомление"
             >
-              <X className="h-3.5 w-3.5" />
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}

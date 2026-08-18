@@ -5,9 +5,10 @@ import { useSessions, type ChatSession } from "@/hooks/useChat";
 import SessionList from "@/components/chat/SessionList";
 import ChatWindow from "@/components/chat/ChatWindow";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { QueryError } from "@/components/shared/QueryError";
 
 export default function ChatPage() {
-  const { data: docs, isLoading } = useDocuments();
+  const { data: docs, isLoading, error, refetch } = useDocuments();
   const readyDocs = useMemo(() => docs?.filter((d) => d.status === "ready") ?? [], [docs]);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
@@ -35,7 +36,14 @@ export default function ChatPage() {
             {isLoading && (
               <p className="text-xs text-muted-foreground p-2">Загрузка...</p>
             )}
-            {!isLoading && readyDocs.length === 0 && (
+            {error && (
+              <QueryError
+                error={error}
+                onRetry={() => void refetch()}
+                className="p-3 text-xs"
+              />
+            )}
+            {!isLoading && !error && readyDocs.length === 0 && (
               <p className="text-xs text-muted-foreground p-2">
                 Нет готовых документов
               </p>

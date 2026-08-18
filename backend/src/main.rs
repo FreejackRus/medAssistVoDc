@@ -68,7 +68,8 @@ async fn main() {
     let cors = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_headers(Any)
+        .allow_credentials(true);
 
     let app = Router::new()
         .route("/health", get(routes::health::health_check))
@@ -161,19 +162,13 @@ async fn main() {
             axum::routing::delete(routes::chat::delete_session),
         )
         // Calculators
-        .route("/api/calculators/bmi", post(routes::calculators::calc_bmi))
         .route(
-            "/api/calculators/creatinine",
-            post(routes::calculators::calc_creatinine),
-        )
-        .route("/api/calculators/bsa", post(routes::calculators::calc_bsa))
-        .route(
-            "/api/calculators/dosage",
-            post(routes::calculators::calc_dosage),
+            "/api/calculators",
+            get(routes::calculators::list_calculators),
         )
         .route(
-            "/api/calculators/score",
-            post(routes::calculators::calc_score),
+            "/api/calculators/{id}",
+            post(routes::calculators::calculate),
         )
         // Services
         .route(
